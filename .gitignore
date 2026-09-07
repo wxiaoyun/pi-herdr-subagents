@@ -1,0 +1,10 @@
+/.superpowers/
+/docs/superpowers/
+/docs/plans/
+/docs/specs/
+
+/node_modules/
+/dist/
+/output/
+
+/tmp/

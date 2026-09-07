@@ -1,0 +1,86 @@
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import type { Herdr } from "../src/herdr.js";
+import { Manager } from "../src/manager.js";
+import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.js";
+import { readReport } from "../src/session.js";
+import { DEFAULTS, loadSettings } from "../src/settings.js";
+
+const tmp = () => mkdtempSync(join(tmpdir(), "phs-"));
+
+describe("session", () => {
+	it("returns last assistant text and summed usage", () => {
+		const dir = tmp();
+		const f = join(dir, "s.jsonl");
+		const msg = (text: string, cost: number) =>
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text }], usage: { input: 10, output: 5, cost: { total: cost } } } });
+		writeFileSync(f, [JSON.stringify({ type: "session" }), msg("first", 0.1), JSON.stringify({ type: "message", message: { role: "user", content: "x" } }), "garbage", msg("final answer", 0.2)].join("\n"));
+		const r = readReport(f);
+		expect(r.text).toBe("final answer");
+		expect(r.usage).toEqual({ input: 20, output: 10, cost: 0.30000000000000004, turns: 2 });
+	});
+});
+
+describe("profiles", () => {
+	it("loads project md over builtins", () => {
+		const cwd = tmp();
+		const agentDir = tmp();
+		mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "agents", "reviewer.md"), `---\ndescription: reviews\nmodel: x/y\ntools: read, grep\nallowed_subagents: [Scout]\n---\nBe strict.`);
+		writeFileSync(join(cwd, ".pi", "agents", "scout.md"), `---\nname: Scout\ndescription: mine\n---\n`);
+		const p = loadProfiles(cwd, agentDir);
+		expect(p.get("reviewer")).toMatchObject({ model: "x/y", tools: ["read", "grep"], allowedSubagents: ["Scout"], systemPrompt: "Be strict.", promptMode: "append" });
+		expect(p.get("Scout")?.description).toBe("mine");
+		expect(p.size).toBe(BUILTIN_PROFILES.length + 1);
+	});
+});
+
+describe("settings", () => {
+	it("merges global < project < defaults", () => {
+		const cwd = tmp();
+		const agentDir = tmp();
+		writeFileSync(join(agentDir, "herdr-subagents.json"), JSON.stringify({ maxConcurrent: 2, splitRatio: 0.3 }));
+		mkdirSync(join(cwd, ".pi"));
+		writeFileSync(join(cwd, ".pi", "herdr-subagents.json"), JSON.stringify({ maxConcurrent: 7 }));
+		expect(loadSettings(cwd, agentDir)).toEqual({ ...DEFAULTS, maxConcurrent: 7, splitRatio: 0.3 });
+	});
+});
+
+describe("manager queue", () => {
+	it("second background spawn waits for a slot, then starts", async () => {
+		let starts = 0;
+		let waiters: Array<(v: any) => void> = [];
+		const fake: Herdr = {
+			tabCreate: async () => "w1:p9",
+			splitCurrent: async () => "w1:p8",
+			agentStart: async () => { starts++; },
+			agentPrompt: async () => {},
+			agentPromptWait: () => new Promise((r) => waiters.push(r)),
+			agentWait: () => new Promise((r) => waiters.push(r)),
+			agentGet: async () => ({ status: "idle", pane: "w1:p9", sessionPath: undefined }),
+			agentList: async () => [],
+			agentRead: async () => "screen",
+			agentFocus: async () => {},
+			sendKeys: async () => {},
+			paneRun: async () => {},
+			paneClose: async () => {},
+		};
+		const sent: string[] = [];
+		const pi: any = { sendUserMessage: (t: string) => sent.push(t), sendMessage: () => {} };
+		const m = new Manager(pi, { ...DEFAULTS, maxConcurrent: 1 }, fake);
+		const base = { prompt: "go", description: "d", profile: BUILTIN_PROFILES[0], cwd: "/", background: true, timeoutMs: 0, depth: 1 };
+		const a = await m.spawn(base);
+		expect(a.status).toBe("running");
+		const b = await m.spawn(base);
+		expect(b.status).toBe("queued");
+		expect(starts).toBe(1);
+		waiters.shift()!({ status: "idle", pane: "w1:p9" });
+		await new Promise((r) => setTimeout(r, 10));
+		expect(starts).toBe(2);
+		expect(m.children.get(a.id)?.status).toBe("done");
+		expect(sent[0]).toContain(`[subagent ${a.id}`);
+		expect(sent[0]).toContain("screen");
+	});
+});

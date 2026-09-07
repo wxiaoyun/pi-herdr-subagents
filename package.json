@@ -1,0 +1,21 @@
+{
+  "name": "pi-herdr-subagents",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Thin herdr-backed subagent spawning, messaging and orchestration for pi",
+  "pi": { "extensions": ["./src/index.ts"] },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/ test/"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.0.18"
+  }
+}
