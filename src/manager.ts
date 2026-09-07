@@ -3,7 +3,7 @@
  * All herdr access goes through the injected `Herdr` helper set.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type AgentInfo, type Herdr, HerdrError, h as defaultHerdr, log } from "./herdr.js";
+import { type AgentInfo, h as defaultHerdr, type Herdr, HerdrError, log } from "./herdr.js";
 import type { Profile } from "./profiles.js";
 import { formatUsage, type Report, readReport } from "./session.js";
 import type { Settings } from "./settings.js";
