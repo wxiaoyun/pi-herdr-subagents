@@ -59,6 +59,7 @@ describe("manager queue", () => {
 			agentPrompt: async () => {},
 			agentPromptWait: () => new Promise((r) => waiters.push(r)),
 			agentWait: () => new Promise((r) => waiters.push(r)),
+			agentWaitUntil: async () => ({ status: "working", pane: "w1:p9" }),
 			agentGet: async () => ({ status: "idle", pane: "w1:p9", sessionPath: undefined }),
 			agentList: async () => [],
 			agentRead: async () => "screen",

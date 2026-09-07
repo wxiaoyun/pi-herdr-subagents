@@ -49,6 +49,10 @@ export function herdr(args: string[], opts: ExecOpts = {}): Promise<any> {
 					resolve(stdout);
 					return;
 				}
+				if (!stdout.trim()) {
+					resolve(undefined);
+					return;
+				}
 				const parsed = tryJson(stdout);
 				if (!parsed) {
 					reject(new HerdrError(`${stage}: non-JSON output: ${stdout.slice(0, 200)}`));
@@ -104,8 +108,18 @@ export const h = {
 		const r = await herdr(["tab", "create", "--no-focus", "--label", label, "--cwd", cwd, ...envArgs(env)]);
 		return r.root_pane.pane_id;
 	},
+	/** Retries while the freshly created pane's shell is still booting. */
 	async agentStart(id: string, pane: string, piArgs: string[], timeoutMs = 60000): Promise<void> {
-		await herdr(["agent", "start", id, "--kind", "pi", "--pane", pane, "--timeout", String(timeoutMs), "--", ...piArgs]);
+		const deadline = Date.now() + 15000;
+		for (;;) {
+			try {
+				await herdr(["agent", "start", id, "--kind", "pi", "--pane", pane, "--timeout", String(timeoutMs), "--", ...piArgs]);
+				return;
+			} catch (e) {
+				if (!(e instanceof HerdrError && e.code === "agent_pane_busy") || Date.now() > deadline) throw e;
+				await new Promise((r) => setTimeout(r, 500));
+			}
+		}
 	},
 	async agentPrompt(id: string, text: string): Promise<void> {
 		await herdr(["agent", "prompt", id, text]);
@@ -122,6 +136,13 @@ export const h = {
 		const args = ["agent", "wait", id];
 		if (timeoutMs > 0) args.push("--timeout", String(timeoutMs));
 		const r = await herdr(args, { signal });
+		return toAgentInfo(r.agent);
+	},
+	/** Block until the agent reaches one of the given states. */
+	async agentWaitUntil(id: string, states: string[], timeoutMs: number): Promise<AgentInfo> {
+		const args = ["agent", "wait", id, ...states.flatMap((s) => ["--until", s])];
+		if (timeoutMs > 0) args.push("--timeout", String(timeoutMs));
+		const r = await herdr(args);
 		return toAgentInfo(r.agent);
 	},
 	async agentGet(id: string): Promise<AgentInfo> {

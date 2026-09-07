@@ -102,12 +102,13 @@ export class Manager {
 
 	// ---- spawn ----------------------------------------------------------------
 
-	private newId(base: string): string {
+	private async newId(base: string): Promise<string> {
+		const live = new Set((await this.h.agentList().catch(() => [])).map((a) => a.name));
 		let id: string;
 		do {
 			this.counter++;
 			id = `sa-${slug(base)}-${this.counter}`.slice(0, 32);
-		} while (this.children.has(id));
+		} while (this.children.has(id) || live.has(id));
 		return id;
 	}
 
@@ -124,7 +125,7 @@ export class Manager {
 			args.push("--tools", [...p.tools, "send_message", ...spawnTools].join(","));
 		}
 		if (session) args.push("--session", session);
-		return args;
+		return [...args, ...this.settings.piArgs];
 	}
 
 	private async launch(child: Child, o: SpawnOpts, session?: string): Promise<void> {
@@ -158,7 +159,7 @@ export class Manager {
 		if (o.resume) return this.resume(o, signal);
 
 		const child: Child = {
-			id: this.newId(o.name ?? o.profile.name),
+			id: await this.newId(o.name ?? o.profile.name),
 			profile: o.profile.name,
 			description: o.description,
 			background: o.background,
@@ -270,12 +271,13 @@ export class Manager {
 
 	private async finish(child: Child, info: AgentInfo): Promise<void> {
 		child.sessionPath = info.sessionPath ?? child.sessionPath;
-		child.report = await this.collect(child);
 		if (info.status === "blocked") {
 			child.status = "blocked";
+			child.report = child.sessionPath ? readReport(child.sessionPath) : undefined;
 			log("child_blocked", { id: child.id });
 			return;
 		}
+		child.report = await this.collect(child);
 		child.status = "done";
 		log("child_done", { id: child.id, usage: formatUsage(child.report.usage) });
 		this.release(child);
@@ -357,6 +359,7 @@ export class Manager {
 		}
 		const child = this.children.get(to);
 		if (child && child.status === "blocked") {
+			await this.h.agentWaitUntil(to, ["working", "idle", "done"], 15000).catch((e) => log("unblock_wait", { to, error: String(e) }));
 			child.status = "running";
 			if (child.background) this.watch(child, this.settings.defaultTimeoutMs);
 		}
