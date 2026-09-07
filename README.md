@@ -16,12 +16,12 @@ pi install git:github.com/<you>/pi-herdr-subagents
 
 ## Tools
 
-| Tool | Purpose |
-|------|---------|
-| `Agent` | Spawn a child. Foreground splits the current pane and blocks until the child finishes. `run_in_background: true` opens a tab and returns at once, the report arrives later as a follow-up message. `resume: <id>` sends another prompt to an existing child, relaunching it from its session file if its pane is gone. |
-| `get_subagent_result` | Status plus recent screen, or the final report. `wait: true` blocks. |
-| `send_message` | Text to any agent. `to` omitted in a child means the parent. `kind`: `message` (prompt, steers if busy), `interrupt` (esc first), `keys` (raw keys like `enter` or `ctrl+c`). `expect_reply: true` marks the child `blocked` in herdr until the parent replies. |
-| `kill_subagent` | Close the child's pane. |
+| Tool                  | Purpose                                                                                                                                                                                                                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Agent`               | Spawn a child. Foreground splits the current pane and blocks until the child finishes. `run_in_background: true` opens a tab and returns at once, the report arrives later as a follow-up message. `resume: <id>` sends another prompt to an existing child, relaunching it from its session file if its pane is gone. |
+| `get_subagent_result` | Status plus recent screen, or the final report. `wait: true` blocks.                                                                                                                                                                                                                                                   |
+| `send_message`        | Text to any agent. `to` omitted in a child means the parent. `kind`: `message` (prompt, steers if busy), `interrupt` (esc first), `keys` (raw keys like `enter` or `ctrl+c`). `expect_reply: true` marks the child `blocked` in herdr until the parent replies.                                                        |
+| `kill_subagent`       | Close the child's pane.                                                                                                                                                                                                                                                                                                |
 
 `/agents` lists live children, focus or kill one.
 
@@ -36,9 +36,10 @@ description: Reviews diffs for correctness
 model: anthropic/claude-sonnet-4-5
 thinking: medium
 tools: read, bash, grep
-prompt_mode: append        # or replace
+prompt_mode: append # or replace
 allowed_subagents: [Scout] # or all
 ---
+
 System prompt body goes here.
 ```
 

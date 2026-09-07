@@ -4,7 +4,11 @@
   "type": "module",
   "license": "MIT",
   "description": "Thin herdr-backed subagent spawning, messaging and orchestration for pi",
-  "pi": { "extensions": ["./src/index.ts"] },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
