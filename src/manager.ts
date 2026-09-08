@@ -2,6 +2,14 @@
  * manager.ts: child registry, concurrency queue, spawn / wait / report / kill.
  * All herdr access goes through the injected `Herdr` helper set.
  */
+
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   type AgentInfo,
@@ -130,20 +138,33 @@ export class Manager {
     return o.model ?? o.profile.model ?? this.settings.defaultModel ?? undefined;
   }
 
-  private piArgs(o: SpawnOpts, id: string, session?: string): string[] {
+  private piArgs(
+    o: SpawnOpts,
+    id: string,
+    session?: string,
+    stagedDir?: string,
+  ): string[] {
     const p = o.profile;
     const args = ["--name", id];
     const model = this.model(o);
     const thinking = o.thinking ?? p.thinking;
     if (model) args.push("--model", model);
     if (thinking) args.push("--thinking", thinking);
-    if (p.systemPrompt)
-      args.push(
+    if (p.systemPrompt) {
+      const flag =
         p.promptMode === "replace"
           ? "--system-prompt"
-          : "--append-system-prompt",
-        p.systemPrompt,
-      );
+          : "--append-system-prompt";
+      let value = p.systemPrompt;
+      if (stagedDir && value.includes("\n")) {
+        // herdr agent start rejects args containing newlines, but pi accepts a
+        // file path for these flags and reads its contents at startup.
+        const file = join(stagedDir, "system-prompt.md");
+        writeFileSync(file, value, { mode: 0o600 });
+        value = file;
+      }
+      args.push(flag, value);
+    }
     if (p.tools?.length) {
       const spawnTools =
         p.allowedSubagents === "all" || p.allowedSubagents.length
@@ -174,16 +195,22 @@ export class Manager {
     child.pane = o.background
       ? await this.h.tabCreate(child.id, o.cwd, env)
       : await this.h.splitCurrent(this.settings.splitRatio, o.cwd, env);
+    // herdr cannot pass args containing newlines; stage multi-line profile
+    // prompts in a temp file (pi reads the path at startup) and clean up after
+    // the child is interactive.
+    const staged = mkdtempSync(join(tmpdir(), "pi-herdr-subagents-"));
     try {
       await this.h.agentStart(
         child.id,
         child.pane,
-        this.piArgs(o, child.id, session),
+        this.piArgs(o, child.id, session, staged),
       );
     } catch (e) {
       log("agent_start_failed", { id: child.id, error: String(e) });
       await this.h.paneClose(child.pane).catch(() => {});
       throw e;
+    } finally {
+      rmSync(staged, { recursive: true, force: true });
     }
     const info = await this.h.agentGet(child.id).catch(() => undefined);
     child.sessionPath = info?.sessionPath;
@@ -309,6 +336,8 @@ export class Manager {
       }
       if (e instanceof HerdrError && e.code === "timeout") {
         await this.timeout(child);
+      } else if (await this.stalledToFinish(child, e)) {
+        // herdr gave up observing a transition, but the child already finished.
       } else {
         this.fail(child, e);
         throw e;
@@ -319,6 +348,25 @@ export class Manager {
       status: child.status,
       text: this.formatReport(child),
     };
+  }
+
+  /**
+   * herdr `agent prompt --wait` errors with `agent_prompt_stalled` when the
+   * whole turn completes before it observes a working/blocked state. If the
+   * child really reached a terminal state, collect its report instead of
+   * failing (which used to strand the pane and report a bogus failure).
+   */
+  private async stalledToFinish(child: Child, e: unknown): Promise<boolean> {
+    if (!(e instanceof HerdrError) || e.code !== "agent_prompt_stalled") {
+      return false;
+    }
+    const info = await this.h.agentGet(child.id).catch(() => undefined);
+    if (!info || (info.status !== "idle" && info.status !== "done")) {
+      return false;
+    }
+    log("prompt_wait_stalled", { id: child.id, status: info.status });
+    await this.finish(child, info);
+    return true;
   }
 
   private watchPrompt(child: Child, prompt: string, timeoutMs: number): void {
@@ -351,6 +399,7 @@ export class Manager {
         if (ac.signal.aborted) return;
         if (e instanceof HerdrError && e.code === "timeout")
           await this.timeout(child);
+        else if (await this.stalledToFinish(child, e)) return;
         else this.fail(child, e);
       })
       .then(() => {
