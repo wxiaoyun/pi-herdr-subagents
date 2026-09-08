@@ -1,3 +1,4 @@
+export * from "./args.ts";
 export * from "./herdr.ts";
 export * from "./host.ts";
 export * from "./manager.ts";

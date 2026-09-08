@@ -13,6 +13,8 @@ export interface Settings {
   splitRatio: number;
   /** Extra CLI args appended to every child pi. */
   piArgs: string[];
+  /** Extra CLI args appended to every child Claude Code. */
+  claudeArgs: string[];
 }
 
 export const DEFAULTS: Settings = {
@@ -24,6 +26,7 @@ export const DEFAULTS: Settings = {
   defaultModel: null,
   splitRatio: 0.5,
   piArgs: [],
+  claudeArgs: [],
 };
 
 const FILE = "herdr-subagents.json";

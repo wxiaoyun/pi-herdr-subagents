@@ -3,13 +3,10 @@
  * All herdr access goes through the injected `Herdr` helper set.
  */
 
-import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { childArgs } from "./args.ts";
 import {
   type AgentInfo,
   h as defaultHerdr,
@@ -19,7 +16,13 @@ import {
 } from "./herdr.ts";
 import type { Harness, Host } from "./host.ts";
 import type { Profile } from "./profiles.ts";
-import { formatUsage, lastSpeaker, type Report, readReport } from "./session.ts";
+import {
+  formatUsage,
+  lastSpeaker,
+  type Report,
+  readReport,
+  sessionPathFor,
+} from "./session.ts";
 import type { Settings } from "./settings.ts";
 
 export type ChildStatus =
@@ -35,6 +38,7 @@ export interface Child {
   background: boolean;
   status: ChildStatus;
   sessionPath?: string;
+  sessionId?: string;
   report?: Report;
   startedAt: number;
   released: boolean;
@@ -68,8 +72,6 @@ export const ENV_DEPTH = "HERDR_SUBAGENT_DEPTH";
 export const ENV_ID = "HERDR_SUBAGENT_ID";
 export const ENV_PROFILE = "HERDR_SUBAGENT_PROFILE";
 export const ENV_HARNESS = "HERDR_SUBAGENT_HARNESS";
-
-const SPAWN_TOOLS = ["Agent", "get_subagent_result", "kill_subagent"];
 
 const slug = (s: string): string =>
   s
@@ -145,47 +147,6 @@ export class Manager {
     return o.model ?? o.profile.model ?? this.settings.defaultModel ?? undefined;
   }
 
-  private piArgs(
-    o: SpawnOpts,
-    id: string,
-    session?: string,
-    stagedDir?: string,
-  ): string[] {
-    const p = o.profile;
-    const args = ["--name", id];
-    const model = this.model(o);
-    const thinking = o.thinking ?? p.thinking;
-    if (model) args.push("--model", model);
-    if (thinking) args.push("--thinking", thinking);
-    if (p.systemPrompt) {
-      const flag =
-        p.promptMode === "replace"
-          ? "--system-prompt"
-          : "--append-system-prompt";
-      let value = p.systemPrompt;
-      if (stagedDir && value.includes("\n")) {
-        // herdr agent start rejects args containing newlines, but pi accepts a
-        // file path for these flags and reads its contents at startup.
-        const file = join(stagedDir, "system-prompt.md");
-        writeFileSync(file, value, { mode: 0o600 });
-        value = file;
-      }
-      args.push(flag, value);
-    }
-    if (p.tools?.length) {
-      const spawnTools =
-        p.allowedSubagents === "all" || p.allowedSubagents.length
-          ? SPAWN_TOOLS
-          : [];
-      args.push(
-        "--tools",
-        [...p.tools, "send_message", ...spawnTools].join(","),
-      );
-    }
-    if (session) args.push("--session", session);
-    return [...args, ...this.settings.piArgs];
-  }
-
   private async launch(
     child: Child,
     o: SpawnOpts,
@@ -198,6 +159,7 @@ export class Manager {
       [ENV_DEPTH]: String(o.depth),
       [ENV_ID]: child.id,
       [ENV_PROFILE]: o.profile.name,
+      [ENV_HARNESS]: o.harness,
     };
     child.pane = o.background
       ? await this.h.tabCreate(child.id, o.cwd, env)
@@ -210,7 +172,19 @@ export class Manager {
       await this.h.agentStart(
         child.id,
         child.pane,
-        this.piArgs(o, child.id, session, staged),
+        o.harness,
+        childArgs(
+          o.harness,
+          {
+            id: child.id,
+            profile: o.profile,
+            model: this.model(o),
+            thinking: o.thinking ?? o.profile.thinking,
+            session,
+            stagedDir: staged,
+          },
+          this.settings,
+        ),
       );
     } catch (e) {
       log("agent_start_failed", { id: child.id, error: String(e) });
@@ -220,7 +194,9 @@ export class Manager {
       rmSync(staged, { recursive: true, force: true });
     }
     const info = await this.h.agentGet(child.id).catch(() => undefined);
-    child.sessionPath = info?.sessionPath;
+    child.sessionId = info?.sessionId;
+    child.sessionPath =
+      info?.sessionPath ?? sessionPathFor(o.harness, o.cwd, info?.sessionId);
     child.status = "running";
     log("launched", {
       id: child.id,
@@ -297,11 +273,13 @@ export class Manager {
       () => false,
     );
     if (!alive) {
-      if (!child.sessionPath)
+      const session =
+        child.harness === "claude" ? child.sessionId : child.sessionPath;
+      if (!session)
         throw new Error(`${child.id} is gone and has no session to resume`);
       await this.acquire(signal);
       child.released = false;
-      await this.launch(child, o, child.sessionPath).catch((e) => {
+      await this.launch(child, o, session).catch((e) => {
         this.fail(child, e);
         throw e;
       });
@@ -375,7 +353,7 @@ export class Manager {
       const info = await this.h.agentGet(child.id).catch(() => undefined);
       if (!info) return false;
       const path = info.sessionPath ?? child.sessionPath;
-      if (path && lastSpeaker(path) === "assistant") {
+      if (path && lastSpeaker(child.harness, path) === "assistant") {
         log("prompt_wait_stalled", { id: child.id, status: info.status });
         await this.finish(child, info);
         return true;
@@ -432,7 +410,7 @@ export class Manager {
     if (info.status === "blocked") {
       child.status = "blocked";
       child.report = child.sessionPath
-        ? readReport(child.sessionPath)
+        ? readReport(child.harness, child.sessionPath)
         : undefined;
       log("child_blocked", { id: child.id });
       return;
@@ -466,7 +444,7 @@ export class Manager {
 
   private async collect(child: Child): Promise<Report> {
     if (child.sessionPath) {
-      const r = readReport(child.sessionPath);
+      const r = readReport(child.harness, child.sessionPath);
       if (r.text) return r;
     }
     const screen = await this.h.agentRead(child.id, 120).catch(() => "");

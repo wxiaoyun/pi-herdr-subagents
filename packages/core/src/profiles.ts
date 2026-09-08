@@ -15,6 +15,8 @@ export interface Profile {
   promptMode: "replace" | "append";
   systemPrompt?: string;
   allowedSubagents: "all" | string[];
+  /** Builtin profiles name tools in pi terms and get translated per harness. */
+  builtin?: true;
 }
 
 export const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
@@ -22,6 +24,7 @@ export const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
 export const BUILTIN_PROFILES: Profile[] = [
   {
     name: "general-purpose",
+    builtin: true,
     description:
       "General agent with all tools. Research, multi-step tasks, code changes. Can spawn any subagent.",
     promptMode: "append",
@@ -29,6 +32,7 @@ export const BUILTIN_PROFILES: Profile[] = [
   },
   {
     name: "Worker",
+    builtin: true,
     description:
       "Implementation agent with all tools. Executes a well-specified task end to end. May spawn Scout only.",
     promptMode: "append",
@@ -36,6 +40,7 @@ export const BUILTIN_PROFILES: Profile[] = [
   },
   {
     name: "Scout",
+    builtin: true,
     description:
       "Read-only fast search agent (read, bash, grep, find, ls, web_search). Locate files, symbols, usages, or web facts. Pick a cheap fast model for it. Cannot spawn subagents.",
     tools: [...READ_ONLY_TOOLS, "web_search"],

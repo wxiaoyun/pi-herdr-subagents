@@ -39,6 +39,7 @@ const emptyHerdr = (): Herdr => ({
   agentFocus: async () => {},
   sendKeys: async () => {},
   paneRun: async () => {},
+  paneReportAgent: async () => {},
   paneClose: async () => {},
 });
 
@@ -97,7 +98,7 @@ describe("session", () => {
         msg("final answer", 0.2),
       ].join("\n"),
     );
-    const r = readReport(f);
+    const r = readReport("pi", f);
     expect(r.text).toBe("final answer");
     expect(r.usage).toEqual({
       input: 20,
@@ -163,7 +164,7 @@ describe("profile prompt staging", () => {
     const fake: Herdr = {
       ...emptyHerdr(),
       splitCurrent: async () => "w1:p8",
-      agentStart: async (_id, _pane, args) => {
+      agentStart: async (_id, _pane, _kind, args) => {
         const i = args.indexOf("--append-system-prompt");
         stagedPath = args[i + 1];
         stagedContent = readFileSync(stagedPath!, "utf8");
@@ -199,7 +200,7 @@ describe("profile prompt staging", () => {
     const fake: Herdr = {
       ...emptyHerdr(),
       splitCurrent: async () => "w1:p8",
-      agentStart: async (_id, _pane, a) => {
+      agentStart: async (_id, _pane, _kind, a) => {
         args = a;
       },
     };
@@ -433,6 +434,7 @@ describe("manager queue", () => {
       agentFocus: async () => {},
       sendKeys: async () => {},
       paneRun: async () => {},
+      paneReportAgent: async () => {},
       paneClose: async () => {},
     };
     const sent: string[] = [];

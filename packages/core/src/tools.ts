@@ -3,8 +3,8 @@
  * registration API (pi registerTool, MCP tools/list + tools/call).
  */
 import { type Static, type TSchema, Type } from "typebox";
-import { log } from "./herdr.ts";
-import { HARNESSES, type Harness, type Host } from "./host.ts";
+import { type Herdr, log } from "./herdr.ts";
+import type { Harness, Host } from "./host.ts";
 import {
   ENV_DEPTH,
   ENV_ID,
@@ -44,10 +44,10 @@ const AgentParams = Type.Object({
     Type.String({ description: "Profile name. Default general-purpose." }),
   ),
   harness: Type.Optional(
-    Type.Union(
-      HARNESSES.map((h) => Type.Literal(h)),
-      { description: "Child harness: pi or claude. Default: profile, then the parent's harness." },
-    ),
+    Type.Union([Type.Literal("pi"), Type.Literal("claude")], {
+      description:
+        "Child harness: pi or claude. Default: profile, then the parent's harness.",
+    }),
   ),
   model: Type.Optional(
     Type.String({
@@ -111,14 +111,18 @@ export interface ToolSet {
 }
 
 /** Build the tools for a host. `cwd` is resolved per call so project config is live. */
-export function createTools(host: Host, cwd: () => string): ToolSet {
+export function createTools(
+  host: Host,
+  cwd: () => string,
+  herdr?: Herdr,
+): ToolSet {
   const parentPane = process.env[ENV_PARENT];
   const depth = Number(process.env[ENV_DEPTH] ?? 0);
   const myProfile = process.env[ENV_PROFILE];
   const myId = process.env[ENV_ID];
   let manager: Manager | undefined;
   const getManager = () => {
-    manager ??= new Manager(host, loadSettings(cwd()));
+    manager ??= new Manager(host, loadSettings(cwd()), herdr);
     return manager;
   };
 

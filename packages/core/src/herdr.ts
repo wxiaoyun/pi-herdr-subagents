@@ -8,7 +8,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "./paths.ts";
 
-export const LOG_ENV = "PI_HERDR_SUBAGENTS_LOG";
+export const LOG_ENV = "HERDR_SUBAGENTS_LOG";
 
 export const log = (
   stage: string,
@@ -123,7 +123,9 @@ export interface AgentInfo {
   status: string;
   pane: string;
   name?: string;
+  /** pi reports a path, Claude Code reports an id. */
   sessionPath?: string;
+  sessionId?: string;
 }
 
 const toAgentInfo = (a: any): AgentInfo => ({
@@ -132,6 +134,7 @@ const toAgentInfo = (a: any): AgentInfo => ({
   name: a.label,
   sessionPath:
     a.agent_session?.kind === "path" ? a.agent_session.value : undefined,
+  sessionId: a.agent_session?.kind === "id" ? a.agent_session.value : undefined,
 });
 
 /** Named helpers used by the manager. Injectable for tests. */
@@ -177,7 +180,8 @@ export const h = {
   async agentStart(
     id: string,
     pane: string,
-    piArgs: string[],
+    kind: string,
+    agentArgs: string[],
     timeoutMs = 60000,
   ): Promise<void> {
     const deadline = Date.now() + 15000;
@@ -188,13 +192,13 @@ export const h = {
           "start",
           id,
           "--kind",
-          "pi",
+          kind,
           "--pane",
           pane,
           "--timeout",
           String(timeoutMs),
           "--",
-          ...piArgs,
+          ...agentArgs,
         ]);
         return;
       } catch (e) {
@@ -279,6 +283,26 @@ export const h = {
   },
   async paneRun(pane: string, text: string): Promise<void> {
     await herdr(["pane", "run", pane, text]);
+  },
+  /** Report a lifecycle state for a pane whose harness has no integration hook for it. */
+  async paneReportAgent(
+    pane: string,
+    state: "idle" | "working" | "blocked",
+    message?: string,
+  ): Promise<void> {
+    const args = [
+      "pane",
+      "report-agent",
+      pane,
+      "--source",
+      "herdr-subagents",
+      "--agent",
+      "claude",
+      "--state",
+      state,
+    ];
+    if (message) args.push("--message", message);
+    await herdr(args);
   },
   async paneClose(pane: string): Promise<void> {
     await herdr(["pane", "close", pane]);
