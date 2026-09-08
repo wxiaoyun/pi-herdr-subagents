@@ -20,6 +20,7 @@ export type ChildStatus =
 export interface Child {
   id: string;
   profile: string;
+  model?: string;
   description: string;
   pane?: string;
   background: boolean;
@@ -125,10 +126,14 @@ export class Manager {
     return id;
   }
 
+  private model(o: SpawnOpts): string | undefined {
+    return o.model ?? o.profile.model ?? this.settings.defaultModel ?? undefined;
+  }
+
   private piArgs(o: SpawnOpts, id: string, session?: string): string[] {
     const p = o.profile;
     const args = ["--name", id];
-    const model = o.model ?? p.model ?? this.settings.defaultModel ?? undefined;
+    const model = this.model(o);
     const thinking = o.thinking ?? p.thinking;
     if (model) args.push("--model", model);
     if (thinking) args.push("--thinking", thinking);
@@ -159,6 +164,7 @@ export class Manager {
     session?: string,
   ): Promise<void> {
     child.status = "starting";
+    child.model = this.model(o);
     const env = {
       [ENV_PARENT]: process.env.HERDR_PANE_ID ?? "",
       [ENV_DEPTH]: String(o.depth),
@@ -198,6 +204,7 @@ export class Manager {
     const child: Child = {
       id: await this.newId(o.name ?? o.profile.name),
       profile: o.profile.name,
+      model: this.model(o),
       description: o.description,
       background: o.background,
       status: "queued",
@@ -219,7 +226,7 @@ export class Manager {
         return {
           id: child.id,
           status: "queued",
-          text: `${child.id} queued (${this.live}/${this.settings.maxConcurrent} slots busy)`,
+          text: `${child.id} queued with model ${child.model ?? "default"} (${this.live}/${this.settings.maxConcurrent} slots busy)`,
         };
       }
       await this.acquire();
@@ -231,7 +238,7 @@ export class Manager {
       return {
         id: child.id,
         status: "running",
-        text: `${child.id} started in pane ${child.pane}`,
+        text: `${child.id} started with model ${child.model ?? "default"} in pane ${child.pane}`,
       };
     }
 
@@ -267,7 +274,11 @@ export class Manager {
     child.status = "running";
     if (o.background) {
       this.watchPrompt(child, o.prompt, o.timeoutMs);
-      return { id: child.id, status: "running", text: `${child.id} resumed` };
+      return {
+        id: child.id,
+        status: "running",
+        text: `${child.id} resumed with model ${child.model ?? "default"}`,
+      };
     }
     return this.foreground(child, o.prompt, o.timeoutMs, signal);
   }
@@ -293,7 +304,7 @@ export class Manager {
         return {
           id: child.id,
           status: "detached",
-          text: `${child.id} detached, keeps running in pane ${child.pane}`,
+          text: `${child.id} detached with model ${child.model ?? "default"}, keeps running in pane ${child.pane}`,
         };
       }
       if (e instanceof HerdrError && e.code === "timeout") {
@@ -400,7 +411,7 @@ export class Manager {
 
   formatReport(child: Child): string {
     const r = child.report;
-    const head = `[subagent ${child.id} | ${child.profile} | ${child.status}${r ? ` | ${formatUsage(r.usage)}` : ""}]`;
+    const head = `[subagent ${child.id} | ${child.profile} | ${child.model ?? "default model"} | ${child.status}${r ? ` | ${formatUsage(r.usage)}` : ""}]`;
     const body = r?.text || "(no output)";
     const tail =
       child.status === "blocked"
@@ -444,7 +455,7 @@ export class Manager {
     if (child.status === "done" || child.status === "killed")
       return this.formatReport(child);
     const recent = await this.h.agentRead(id, 40).catch(() => "");
-    return `[subagent ${id} | ${child.profile} | ${child.status} | pane ${child.pane}]\n${recent.trim()}`;
+    return `[subagent ${id} | ${child.profile} | ${child.model ?? "default model"} | ${child.status} | pane ${child.pane}]\n${recent.trim()}`;
   }
 
   async send(

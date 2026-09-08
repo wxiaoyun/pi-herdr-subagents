@@ -164,6 +164,7 @@ describe("manager queue", () => {
       prompt: "go",
       description: "d",
       profile: BUILTIN_PROFILES[0],
+      model: "test/model",
       cwd: "/",
       background: true,
       timeoutMs: 0,
@@ -171,14 +172,18 @@ describe("manager queue", () => {
     };
     const a = await m.spawn(base);
     expect(a.status).toBe("running");
+    expect(a.text).toContain("model test/model");
     const b = await m.spawn(base);
     expect(b.status).toBe("queued");
+    expect(b.text).toContain("model test/model");
     expect(starts).toBe(1);
     waiters.shift()!({ status: "idle", pane: "w1:p9" });
     await new Promise((r) => setTimeout(r, 10));
     expect(starts).toBe(2);
     expect(m.children.get(a.id)?.status).toBe("done");
     expect(sent[0]).toContain(`[subagent ${a.id}`);
+    expect(sent[0]).toContain("test/model");
     expect(sent[0]).toContain("screen");
+    expect(await m.result(a.id, false, 0)).toContain("test/model");
   });
 });
