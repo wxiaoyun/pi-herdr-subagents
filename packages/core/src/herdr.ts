@@ -284,7 +284,7 @@ export const h = {
   async paneRun(pane: string, text: string): Promise<void> {
     await herdr(["pane", "run", pane, text]);
   },
-  /** Report a lifecycle state for a pane whose harness has no integration hook for it. */
+  /** Report a lifecycle state for a pane whose harness cannot report it itself. */
   async paneReportAgent(
     pane: string,
     state: "idle" | "working" | "blocked",

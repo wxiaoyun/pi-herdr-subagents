@@ -9,7 +9,7 @@ A coding-agent product that runs as an interactive terminal session and that her
 _Avoid_: agent kind, backend, runtime, CLI
 
 **Host**:
-The harness running the parent session, which loads this project's tools. The pi host is the extension; the claude host is the MCP server.
+The harness running the parent session, which loads this project's tools. The pi host is the extension. The claude host is the MCP server.
 _Avoid_: plugin, adapter, integration
 
 **Parent**:
@@ -20,7 +20,7 @@ A session spawned by a parent into its own herdr pane. Has exactly one harness, 
 _Avoid_: subagent (reserved for the tool name), worker
 
 **Profile**:
-A named preset for a child: system prompt, tool allowlist, model, effort, and which profiles it may spawn. Harness-neutral by default; may pin a harness.
+A named preset for a child: system prompt, tool allowlist, model, effort, and which profiles it may spawn. Harness-neutral by default. May pin a harness.
 _Avoid_: agent definition, subagent type, persona
 
 **Report**:
@@ -34,7 +34,7 @@ herdr state meaning the child is waiting on input from a person or its parent. R
 Foreground: child shares the parent's tab and the parent waits. Background: child gets its own tab and the parent continues.
 
 **Detached**:
-A foreground child the parent stopped waiting on; it continues as a background child.
+A foreground child the parent stopped waiting on. It continues as a background child.
 
 **Stalled**:
 A child whose turn finished before herdr observed it working. Recovered by checking the session file.

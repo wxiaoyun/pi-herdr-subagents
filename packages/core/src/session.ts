@@ -88,7 +88,8 @@ export function readReport(harness: Harness, sessionPath: string): Report {
 
 /**
  * Role of the last message entry, or undefined when the file has no messages
- * yet (missing file, boot in progress, garbage only).
+ * yet (missing file, boot in progress, garbage only). A Claude assistant entry
+ * that stopped for a tool call is still mid-turn and counts as the user's.
  */
 export function lastSpeaker(
   harness: Harness,
@@ -100,7 +101,11 @@ export function lastSpeaker(
       harness === "claude"
         ? e?.type === "user" || e?.type === "assistant"
         : e?.type === "message";
-    if (isMsg && e.message?.role) last = e.message.role;
+    if (!isMsg || !e.message?.role) continue;
+    last =
+      harness === "claude" && e.message.stop_reason === "tool_use"
+        ? "user"
+        : e.message.role;
   }
   return last;
 }

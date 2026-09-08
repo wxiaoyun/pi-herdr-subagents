@@ -146,12 +146,13 @@ describe("settings", () => {
     mkdirSync(join(cwd, ".pi"));
     writeFileSync(
       join(cwd, ".pi", "herdr-subagents.json"),
-      JSON.stringify({ maxConcurrent: 7 }),
+      JSON.stringify({ maxConcurrent: 7, claudeArgs: ["--verbose"] }),
     );
     expect(loadSettings(cwd, agentDir)).toEqual({
       ...DEFAULTS,
       maxConcurrent: 7,
       splitRatio: 0.3,
+      claudeArgs: ["--verbose"],
     });
   });
 });

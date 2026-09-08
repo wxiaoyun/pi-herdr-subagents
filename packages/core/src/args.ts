@@ -34,6 +34,8 @@ const CLAUDE_TOOL_ALIASES: Record<string, string> = {
 
 const CLAUDE_EFFORT: Record<string, string> = { off: "low", minimal: "low" };
 
+const CLAUDE_NATIVE_AGENT_TOOLS = ["Agent", "SendMessage", "ListAgents"];
+
 export const MCP_SERVER_PATH = fileURLToPath(
   new URL("../../claude/bin/herdr-subagents-mcp.ts", import.meta.url),
 );
@@ -92,10 +94,17 @@ function claudeArgs(c: ChildSpec, s: Settings): string[] {
     args.push(prompt.file ? `${base}-file` : base, prompt.value);
   }
   if (p.tools?.length) {
-    const tools = p.builtin ? p.tools.map((t) => CLAUDE_TOOL_ALIASES[t] ?? t) : p.tools;
+    // --tools restricts Claude's built-in set. Keep the native multi-agent
+    // tools for profiles that may spawn at all.
+    const tools = p.builtin
+      ? p.tools.map((t) => CLAUDE_TOOL_ALIASES[t] ?? t)
+      : p.tools;
+    if (canSpawn(p)) tools.push(...CLAUDE_NATIVE_AGENT_TOOLS);
     args.push("--tools", [...new Set(tools)].join(","));
   }
-  args.push("--permission-mode", "acceptEdits", "--mcp-config", mcpConfig());
+  if (!s.claudeArgs.includes("--permission-mode"))
+    args.push("--permission-mode", "acceptEdits");
+  args.push("--mcp-config", mcpConfig());
   if (c.session) args.push("--resume", c.session);
   return [...args, ...s.claudeArgs];
 }

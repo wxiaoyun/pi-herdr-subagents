@@ -72,14 +72,13 @@ export function serve(tools: ToolSet): void {
 }
 
 export function main(): void {
-  const pane = process.env.HERDR_PANE_ID;
-  if (process.env.HERDR_ENV !== "1" || !pane) {
-    // Still serve, but every tool errors: Claude shows a clear reason instead of a dead server.
-    log("disabled", { reason: "not inside a herdr pane" });
-  }
+  const pane =
+    process.env.HERDR_ENV === "1" ? process.env.HERDR_PANE_ID : undefined;
   const host = createClaudeHost(pane ?? "");
   const tools = createTools(host, () => process.cwd());
   if (!pane) {
+    // Still serve, but every tool errors: Claude shows a clear reason instead of a dead server.
+    log("disabled", { reason: "not inside a herdr pane" });
     for (const t of tools.all) {
       t.execute = async () => ({ text: "herdr-subagents: not running inside a herdr pane", isError: true });
     }

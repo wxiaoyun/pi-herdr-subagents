@@ -111,6 +111,18 @@ describe("claude child prompt and tools", () => {
   it("appends claudeArgs and resumes by session id", async () => {
     const { args } = await startArgs({}, { ...DEFAULTS, claudeArgs: ["--verbose"] });
     expect(args.at(-1)).toBe("--verbose");
+    const { args: over } = await startArgs(
+      {},
+      { ...DEFAULTS, claudeArgs: ["--permission-mode", "plan"] },
+    );
+    expect(over.filter((a) => a === "--permission-mode")).toHaveLength(1);
+    expect(over[over.indexOf("--permission-mode") + 1]).toBe("plan");
+  });
+
+  it("yields no text on a garbage claude session so the screen fallback applies", () => {
+    const f = join(mkdtempSync(join(tmpdir(), "phs-g-")), "s.jsonl");
+    writeFileSync(f, "not json\n{\"type\":\"user\"}");
+    expect(readReport("claude", f).text).toBe("");
   });
 });
 
@@ -139,6 +151,18 @@ describe("claude session file", () => {
       usage: { input: 20, output: 12, cost: 0, turns: 2 },
     });
     expect(lastSpeaker("claude", f)).toBe("assistant");
+  });
+
+  it("treats a pending tool call as an unfinished turn", () => {
+    const f = join(dir(), "s.jsonl");
+    writeFileSync(
+      f,
+      JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use" }] },
+      }),
+    );
+    expect(lastSpeaker("claude", f)).toBe("user");
   });
 
   it("derives the session path from cwd and id", () => {
@@ -220,5 +244,27 @@ describe("harness selection", () => {
     const p = loadProfiles(dir, mkdtempSync(join(tmpdir(), "phs-agent-")));
     expect(p.get("cc")).toMatchObject({ harness: "claude", tools: ["Read", "Grep"], systemPrompt: "body" });
     expect(p.get("general-purpose")?.harness).toBeUndefined();
+  });
+
+  it("tool param beats profile harness beats parent harness", async () => {
+    const kinds: string[] = [];
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      agentStart: async (_id, _pane, kind) => {
+        kinds.push(kind);
+      },
+    };
+    const dir = cwd();
+    mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
+    writeFileSync(
+      join(dir, ".pi", "agents", "cc.md"),
+      "---\ndescription: d\nharness: claude\n---\n",
+    );
+    const tools = createTools(host(), () => dir, fake);
+    const base = { prompt: "p", description: "d", run_in_background: true };
+    await tools.agent.execute({ ...base, subagent_type: "cc" });
+    await tools.agent.execute({ ...base, subagent_type: "cc", harness: "pi" });
+    await tools.agent.execute(base);
+    expect(kinds).toEqual(["claude", "pi", "pi"]);
   });
 });

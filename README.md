@@ -53,7 +53,7 @@ In pi, `/agents` lists live children, focus or kill one.
 | thinking             | `--thinking` as given                       | `--effort`, `off` and `minimal` become `low`                                       |
 | tools                | `--tools` plus the subagent tools           | `--tools` verbatim; builtin profiles are translated (`read` to `Read`, `find` to `Glob`, ...) |
 | permissions          | n/a                                         | `--permission-mode acceptEdits`, override via `claudeArgs`                          |
-| native subagents     | none                                        | native `Agent`, `SendMessage`, `ListAgents` stay available                          |
+| native subagents     | none                                        | native `Agent`, `SendMessage`, `ListAgents` stay available, except for profiles that may not spawn (Scout) |
 | report into parent   | pi message queue (`notify` setting applies) | typed into the parent's pane as a user message (`notify` ignored)                   |
 | `expect_reply`       | herdr shows `blocked`                       | best effort, herdr's screen detection may override                                  |
 | resume               | `--session <path>`                          | `--resume <session id>`                                                             |
