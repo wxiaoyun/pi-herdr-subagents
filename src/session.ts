@@ -40,5 +40,31 @@ export function readReport(sessionPath: string): Report {
   return { text, usage };
 }
 
+/**
+ * Role of the last message entry in a pi session jsonl, or undefined when the
+ * file has no messages yet (missing file, boot in progress, garbage only).
+ */
+export function lastSpeaker(sessionPath: string): string | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(sessionPath, "utf8");
+  } catch {
+    return undefined;
+  }
+  let last: string | undefined;
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let entry: any;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.type === "message" && entry.message?.role)
+      last = entry.message.role;
+  }
+  return last;
+}
+
 export const formatUsage = (u: Report["usage"]): string =>
   `turns=${u.turns} in=${u.input} out=${u.output} cost=$${u.cost.toFixed(4)}`;

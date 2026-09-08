@@ -19,7 +19,7 @@ import {
   log,
 } from "./herdr.js";
 import type { Profile } from "./profiles.js";
-import { formatUsage, type Report, readReport } from "./session.js";
+import { formatUsage, type Report, lastSpeaker, readReport } from "./session.js";
 import type { Settings } from "./settings.js";
 
 export type ChildStatus =
@@ -352,21 +352,31 @@ export class Manager {
 
   /**
    * herdr `agent prompt --wait` errors with `agent_prompt_stalled` when the
-   * whole turn completes before it observes a working/blocked state. If the
-   * child really reached a terminal state, collect its report instead of
-   * failing (which used to strand the pane and report a bogus failure).
+   * whole turn completes before it observes a working/blocked state. `idle`
+   * alone is ambiguous (booting vs finished), so poll the session file: a turn
+   * is done only once an assistant message follows the last user message.
    */
+  stallGraceMs = 30_000;
+
   private async stalledToFinish(child: Child, e: unknown): Promise<boolean> {
     if (!(e instanceof HerdrError) || e.code !== "agent_prompt_stalled") {
       return false;
     }
-    const info = await this.h.agentGet(child.id).catch(() => undefined);
-    if (!info || (info.status !== "idle" && info.status !== "done")) {
-      return false;
+    const deadline = Date.now() + this.stallGraceMs;
+    while (Date.now() < deadline) {
+      const info = await this.h.agentGet(child.id).catch(() => undefined);
+      if (!info) return false;
+      const path = info.sessionPath ?? child.sessionPath;
+      if (path && lastSpeaker(path) === "assistant") {
+        log("prompt_wait_stalled", { id: child.id, status: info.status });
+        await this.finish(child, info);
+        return true;
+      }
+      if (info.status === "blocked" || info.status === "failed") return false;
+      await new Promise((r) => setTimeout(r, 500));
     }
-    log("prompt_wait_stalled", { id: child.id, status: info.status });
-    await this.finish(child, info);
-    return true;
+    log("prompt_wait_stall_timeout", { id: child.id, status: child.status });
+    return false;
   }
 
   private watchPrompt(child: Child, prompt: string, timeoutMs: number): void {

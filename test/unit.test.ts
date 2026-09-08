@@ -279,6 +279,94 @@ describe("prompt-wait stall recovery", () => {
     expect(closed).toEqual(["w1:p8"]); // no stranded pane
   });
 
+  it("does not finish a booting child with no assistant reply yet", async () => {
+    const dir = tmp();
+    const f = join(dir, "s.jsonl");
+    // Session with only the user prompt: the turn has not produced output.
+    writeFileSync(
+      f,
+      [
+        JSON.stringify({ type: "session" }),
+        JSON.stringify({ type: "message", message: { role: "user" } }),
+      ].join("\n"),
+    );
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      splitCurrent: async () => "w1:p8",
+      agentStart: async () => {},
+      agentPromptWait: async () => {
+        throw stallErr();
+      },
+      agentGet: async () => ({
+        status: "idle",
+        pane: "w1:p8",
+        sessionPath: f,
+      }),
+    };
+    const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+    m.stallGraceMs = 300; // keep the test fast
+    await expect(
+      m.spawn({
+        prompt: "go",
+        description: "d",
+        profile: BUILTIN_PROFILES[0],
+        cwd: "/",
+        background: false,
+        timeoutMs: 0,
+        depth: 1,
+      }),
+    ).rejects.toThrow("no observed working");
+    expect(m.children.get([...m.children.keys()][0])?.status).toBe("killed");
+  });
+
+  it("finishes once the assistant reply lands while polling", async () => {
+    const dir = tmp();
+    const f = join(dir, "s.jsonl");
+    writeFileSync(
+      f,
+      JSON.stringify({ type: "message", message: { role: "user" } }),
+    );
+    let polls = 0;
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      splitCurrent: async () => "w1:p8",
+      agentStart: async () => {},
+      agentPromptWait: async () => {
+        throw stallErr();
+      },
+      agentGet: async () => {
+        polls++;
+        if (polls >= 3) {
+          // Turn completes mid-poll: assistant message lands in the session.
+          writeFileSync(
+            f,
+            JSON.stringify({
+              type: "message",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "late answer" }],
+              },
+            }),
+          );
+        }
+        return { status: "working", pane: "w1:p8", sessionPath: f };
+      },
+    };
+    const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+    m.stallGraceMs = 3000;
+    const r = await m.spawn({
+      prompt: "go",
+      description: "d",
+      profile: BUILTIN_PROFILES[0],
+      cwd: "/",
+      background: false,
+      timeoutMs: 0,
+      depth: 1,
+    });
+    expect(r.status).toBe("done");
+    expect(r.text).toContain("late answer");
+  });
+
   it("fails when the stalled child is not in a terminal state", async () => {
     const fake: Herdr = {
       ...emptyHerdr(),
@@ -294,6 +382,7 @@ describe("prompt-wait stall recovery", () => {
       }),
     };
     const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+    m.stallGraceMs = 300; // keep the test fast
     await expect(
       m.spawn({
         prompt: "go",
