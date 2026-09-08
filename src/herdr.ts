@@ -1,21 +1,34 @@
 /**
  * herdr.ts: thin wrapper over the `herdr` CLI. Every command prints JSON on
- * stdout (success) or JSON on stderr (error). We log every call so a broken
- * step is searchable by stage.
+ * stdout (success) or JSON on stderr (error). Optional file logging makes a
+ * broken step searchable by stage without corrupting the TUI streams.
  */
 import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+
+export const LOG_ENV = "PI_HERDR_SUBAGENTS_LOG";
 
 export const log = (
   stage: string,
   fields: Record<string, unknown> = {},
 ): void => {
-  const kv = Object.entries(fields)
-    .map(
-      ([k, v]) =>
-        `${k}=${typeof v === "string" ? JSON.stringify(v) : JSON.stringify(v)}`,
-    )
-    .join(" ");
-  process.stderr.write(`[herdr-subagents] stage=${stage} ${kv}\n`);
+  const configuredPath = process.env[LOG_ENV];
+  if (!configuredPath) return;
+  const path =
+    configuredPath === "1"
+      ? join(getAgentDir(), "herdr-subagents-debug.log")
+      : configuredPath;
+  try {
+    const kv = Object.entries(fields)
+      .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+      .join(" ");
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, `[herdr-subagents] stage=${stage} ${kv}\n`);
+  } catch {
+    // Logging must never write to the TUI streams or break extension behavior.
+  }
 };
 
 export class HerdrError extends Error {

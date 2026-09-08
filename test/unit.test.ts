@@ -1,14 +1,48 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Herdr } from "../src/herdr.js";
+import { type Herdr, LOG_ENV, log } from "../src/herdr.js";
 import { Manager } from "../src/manager.js";
 import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.js";
 import { readReport } from "../src/session.js";
 import { DEFAULTS, loadSettings } from "../src/settings.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "phs-"));
+
+describe("logging", () => {
+  it("writes to the default or configured file", () => {
+    const agentDir = tmp();
+    const path = join(tmp(), "nested", "debug.log");
+    const previousLog = process.env[LOG_ENV];
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    try {
+      process.env[LOG_ENV] = "1";
+      log("default");
+      expect(
+        readFileSync(join(agentDir, "herdr-subagents-debug.log"), "utf8"),
+      ).toBe("[herdr-subagents] stage=default \n");
+
+      process.env[LOG_ENV] = path;
+      log("test", { target: "/tmp/example", status: 200 });
+      expect(readFileSync(path, "utf8")).toBe(
+        '[herdr-subagents] stage=test target="/tmp/example" status=200\n',
+      );
+    } finally {
+      if (previousLog === undefined) delete process.env[LOG_ENV];
+      else process.env[LOG_ENV] = previousLog;
+      if (previousAgentDir === undefined)
+        delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+  });
+});
 
 describe("session", () => {
   it("returns last assistant text and summed usage", () => {

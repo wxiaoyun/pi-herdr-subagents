@@ -68,6 +68,14 @@ Model and thinking default to the parent's current values.
 - Pressing esc during a foreground spawn detaches it: the child keeps running as background.
 - `piArgs`: extra CLI args for every child pi, for example `["--no-skills"]`.
 
+## Debug logging
+
+Logging is disabled by default and never writes to stdout or stderr. Set `PI_HERDR_SUBAGENTS_LOG=1` to append logs to `~/.pi/agent/herdr-subagents-debug.log`, or set it to a file path:
+
+```sh
+PI_HERDR_SUBAGENTS_LOG=/tmp/herdr-subagents.log pi
+```
+
 ## How a child asks the parent
 
 Child calls `send_message({ message, expect_reply: true })`, ends its turn. The text lands in the parent as a queued message prefixed `[from <id>]`. The parent's foreground `Agent` call returns with status `blocked`. Parent answers with `send_message({ to: <id>, message })` and resumes waiting with `get_subagent_result({ agent_id, wait: true })`.
