@@ -6,12 +6,11 @@ Thin pi extension that spawns, messages, inspects and kills child pi agents thro
 
 - herdr >= 0.8.2 with the pi integration installed: `herdr integration install pi`
 - pi must run inside a herdr pane. Outside herdr the extension registers nothing.
-- Remove `@tintinweb/pi-subagents` if installed, the tool names overlap.
 
 ## Install
 
 ```
-pi install git:github.com/<you>/pi-herdr-subagents
+pi install git:github.com/wxiaoyun/pi-herdr-subagents
 ```
 
 ## Tools
