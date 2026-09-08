@@ -49,10 +49,10 @@ In pi, `/agents` lists live children, focus or kill one.
 
 | Concern              | pi child                                    | Claude Code child                                                                  |
 | -------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------- |
-| model                | `provider/id`, inherits parent when pi      | Claude id or alias, inherits parent only when the parent is Claude Code             |
+| model                | `provider/id`, inherits parent when pi      | `anthropic/<id>` loses its prefix, bare ids pass through, other providers error     |
 | thinking             | `--thinking` as given                       | `--effort`, `off` and `minimal` become `low`                                       |
 | tools                | `--tools` plus the subagent tools           | `--tools` verbatim; builtin profiles are translated (`read` to `Read`, `find` to `Glob`, ...) |
-| permissions          | n/a                                         | `--permission-mode acceptEdits`, override via `claudeArgs`                          |
+| permissions          | n/a                                         | `--permission-mode bypassPermissions`, profile tools also go to `--allowedTools`, override via `claudeArgs` |
 | native subagents     | none                                        | native `Agent`, `SendMessage`, `ListAgents` stay available, except for profiles that may not spawn (Scout) |
 | report into parent   | pi message queue (`notify` setting applies) | typed into the parent's pane as a user message (`notify` ignored)                   |
 | `expect_reply`       | herdr shows `blocked`                       | best effort, herdr's screen detection may override                                  |
@@ -103,7 +103,7 @@ Tool names in user profiles are passed to the child harness as written. Model an
 - `maxConcurrent`: further spawns queue FIFO. Foreground spawns block, background ones return `queued`.
 - Timeout returns the partial report with status `timeout` and leaves the child running.
 - Pressing esc during a foreground spawn detaches it: the child keeps running as background.
-- `piArgs` / `claudeArgs`: extra CLI args for every child of that harness, for example `["--no-skills"]` or `["--permission-mode", "bypassPermissions"]`.
+- `piArgs` / `claudeArgs`: extra CLI args for every child of that harness, for example `["--no-skills"]` or `["--permission-mode", "acceptEdits"]`.
 
 Children carry `HERDR_SUBAGENT_PARENT`, `HERDR_SUBAGENT_DEPTH`, `HERDR_SUBAGENT_ID`, `HERDR_SUBAGENT_PROFILE` and `HERDR_SUBAGENT_HARNESS` in their environment.
 

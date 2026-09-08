@@ -64,19 +64,39 @@ async function startArgs(opts: Partial<SpawnOpts>, settings = DEFAULTS) {
 describe("claude child spawn", () => {
   it("starts a claude agent with claude-native flags", async () => {
     const { id, kind, args, flag } = await startArgs({
-      model: "haiku",
+      model: "anthropic/claude-sonnet-4-5",
       thinking: "minimal",
     });
     expect(kind).toBe("claude");
     expect(flag("--name")).toBe(id);
-    expect(flag("--model")).toBe("haiku");
+    expect(flag("--model")).toBe("claude-sonnet-4-5");
     expect(flag("--effort")).toBe("low");
-    expect(flag("--permission-mode")).toBe("acceptEdits");
+    expect(flag("--permission-mode")).toBe("bypassPermissions");
     expect(JSON.parse(flag("--mcp-config")).mcpServers.herdr.args[0]).toMatch(
       /herdr-subagents-mcp\.ts$/,
     );
     expect(args).not.toContain("--thinking");
     expect(args.some((a) => a.includes("\n"))).toBe(false);
+  });
+});
+
+describe("claude child model", () => {
+  it("keeps bare ids and rejects non-anthropic providers", async () => {
+    expect((await startArgs({ model: "haiku" })).flag("--model")).toBe("haiku");
+    const m = new Manager(host(), DEFAULTS, emptyHerdr());
+    await expect(
+      m.spawn({
+        prompt: "go",
+        description: "d",
+        profile: BUILTIN_PROFILES[0],
+        harness: "claude",
+        model: "openrouter/x",
+        cwd: "/",
+        background: true,
+        timeoutMs: 0,
+        depth: 1,
+      }),
+    ).rejects.toThrow("anthropic");
   });
 });
 
@@ -104,6 +124,7 @@ describe("claude child prompt and tools", () => {
       profile: BUILTIN_PROFILES.find((p) => p.name === "Scout")!,
     });
     expect(scout.flag("--tools")).toBe("Read,Bash,Grep,Glob,WebSearch");
+    expect(scout.flag("--allowedTools")).toBe("Read,Bash,Grep,Glob,WebSearch");
     const user = await startArgs({ profile: profile({ tools: ["Edit", "Bash(git *)"] }) });
     expect(user.flag("--tools")).toBe("Edit,Bash(git *)");
   });

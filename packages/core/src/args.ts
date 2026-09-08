@@ -83,10 +83,21 @@ function piArgs(c: ChildSpec, s: Settings): string[] {
   return [...args, ...s.piArgs];
 }
 
+/** pi model ids are `provider/model`. Claude Code runs anthropic models only and wants the bare id. */
+export function claudeModel(model: string): string {
+  const slash = model.indexOf("/");
+  if (slash < 0) return model;
+  if (model.slice(0, slash) !== "anthropic")
+    throw new Error(
+      `model ${model}: a Claude Code child can only run anthropic models`,
+    );
+  return model.slice(slash + 1);
+}
+
 function claudeArgs(c: ChildSpec, s: Settings): string[] {
   const p = c.profile;
   const args = ["--name", c.id];
-  if (c.model) args.push("--model", c.model);
+  if (c.model) args.push("--model", claudeModel(c.model));
   if (c.thinking) args.push("--effort", CLAUDE_EFFORT[c.thinking] ?? c.thinking);
   const prompt = promptArg(c);
   if (prompt) {
@@ -100,10 +111,13 @@ function claudeArgs(c: ChildSpec, s: Settings): string[] {
       ? p.tools.map((t) => CLAUDE_TOOL_ALIASES[t] ?? t)
       : p.tools;
     if (canSpawn(p)) tools.push(...CLAUDE_NATIVE_AGENT_TOOLS);
-    args.push("--tools", [...new Set(tools)].join(","));
+    const list = [...new Set(tools)].join(",");
+    // A profile that enumerates its tools has approved them: never prompt.
+    args.push("--tools", list, "--allowedTools", list);
   }
+  // Children run unattended, like pi children. claudeArgs may tighten this.
   if (!s.claudeArgs.includes("--permission-mode"))
-    args.push("--permission-mode", "acceptEdits");
+    args.push("--permission-mode", "bypassPermissions");
   args.push("--mcp-config", mcpConfig());
   if (c.session) args.push("--resume", c.session);
   return [...args, ...s.claudeArgs];
