@@ -1,0 +1,9 @@
+{
+  "name": "@herdr-subagents/claude",
+  "version": "0.2.0",
+  "type": "module",
+  "private": true,
+  "description": "Claude Code host: stdio MCP server",
+  "bin": { "herdr-subagents-mcp": "./bin/herdr-subagents-mcp.ts" },
+  "dependencies": { "@herdr-subagents/core": "*" }
+}

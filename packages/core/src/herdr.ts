@@ -6,7 +6,7 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "./paths.ts";
 
 export const LOG_ENV = "PI_HERDR_SUBAGENTS_LOG";
 

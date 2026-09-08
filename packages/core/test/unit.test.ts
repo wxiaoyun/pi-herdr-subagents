@@ -8,14 +8,19 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type Herdr, HerdrError, LOG_ENV, log } from "../src/herdr.js";
-import { Manager } from "../src/manager.js";
-import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.js";
-import { readReport } from "../src/session.js";
-import { DEFAULTS, loadSettings } from "../src/settings.js";
+import { type Herdr, HerdrError, LOG_ENV, log } from "../src/herdr.ts";
+import type { Host } from "../src/host.ts";
+import { Manager, type SpawnOpts } from "../src/manager.ts";
+import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.ts";
+import { readReport } from "../src/session.ts";
+import { DEFAULTS, loadSettings } from "../src/settings.ts";
 
-/** Minimal pi stub so background watchers can deliver without throwing. */
-const piStub = (): any => ({ sendUserMessage: () => {}, sendMessage: () => {} });
+/** Minimal host stub so background watchers can deliver without throwing. */
+const piStub = (): Host => ({
+  harness: "pi",
+  deliver: () => {},
+  setBlocked: () => {},
+});
 
 const tmp = () => mkdtempSync(join(tmpdir(), "phs-"));
 
@@ -176,6 +181,7 @@ describe("profile prompt staging", () => {
         allowedSubagents: [],
         systemPrompt: "first line\nsecond line",
       },
+      harness: "pi",
       cwd: "/",
       background: true,
       timeoutMs: 0,
@@ -208,6 +214,7 @@ describe("profile prompt staging", () => {
         allowedSubagents: [],
         systemPrompt: "single line",
       },
+      harness: "pi",
       cwd: "/",
       background: true,
       timeoutMs: 0,
@@ -269,6 +276,7 @@ describe("prompt-wait stall recovery", () => {
       prompt: "go",
       description: "d",
       profile: BUILTIN_PROFILES[0],
+      harness: "pi",
       cwd: "/",
       background: false,
       timeoutMs: 0,
@@ -310,6 +318,7 @@ describe("prompt-wait stall recovery", () => {
         prompt: "go",
         description: "d",
         profile: BUILTIN_PROFILES[0],
+        harness: "pi",
         cwd: "/",
         background: false,
         timeoutMs: 0,
@@ -358,6 +367,7 @@ describe("prompt-wait stall recovery", () => {
       prompt: "go",
       description: "d",
       profile: BUILTIN_PROFILES[0],
+      harness: "pi",
       cwd: "/",
       background: false,
       timeoutMs: 0,
@@ -388,6 +398,7 @@ describe("prompt-wait stall recovery", () => {
         prompt: "go",
         description: "d",
         profile: BUILTIN_PROFILES[0],
+        harness: "pi",
         cwd: "/",
         background: false,
         timeoutMs: 0,
@@ -425,16 +436,19 @@ describe("manager queue", () => {
       paneClose: async () => {},
     };
     const sent: string[] = [];
-    const pi: any = {
-      sendUserMessage: (t: string) => sent.push(t),
-      sendMessage: () => {},
+    const host: Host = {
+      ...piStub(),
+      deliver: (t: string) => {
+        sent.push(t);
+      },
     };
-    const m = new Manager(pi, { ...DEFAULTS, maxConcurrent: 1 }, fake);
-    const base = {
+    const m = new Manager(host, { ...DEFAULTS, maxConcurrent: 1 }, fake);
+    const base: SpawnOpts = {
       prompt: "go",
       description: "d",
       profile: BUILTIN_PROFILES[0],
       model: "test/model",
+      harness: "pi",
       cwd: "/",
       background: true,
       timeoutMs: 0,

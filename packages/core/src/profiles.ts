@@ -1,15 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import {
-  CONFIG_DIR_NAME,
-  getAgentDir,
-  parseFrontmatter,
-} from "@earendil-works/pi-coding-agent";
-import { log } from "./herdr.js";
+import { log } from "./herdr.ts";
+import { HARNESSES, type Harness } from "./host.ts";
+import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter } from "./paths.ts";
 
 export interface Profile {
   name: string;
   description: string;
+  /** Pin the child harness. Default: the parent's. */
+  harness?: Harness;
   model?: string;
   thinking?: string;
   tools?: string[];
@@ -71,6 +70,7 @@ function loadDir(dir: string, out: Map<string, Profile>): void {
       out.set(name, {
         name,
         description: String(fm.description ?? ""),
+        harness: HARNESSES.find((h) => h === fm.harness),
         model: fm.model ? String(fm.model) : undefined,
         thinking: fm.thinking ? String(fm.thinking) : undefined,
         tools: asList(fm.tools),

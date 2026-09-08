@@ -18,6 +18,6 @@
     "enabled": false
   },
   "files": {
-    "includes": ["src/**/*.ts", "test/**/*.ts"]
+    "includes": ["packages/**/*.ts"]
   }
 }

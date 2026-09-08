@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { log } from "./herdr.js";
+import { log } from "./herdr.ts";
+import { CONFIG_DIR_NAME, getAgentDir } from "./paths.ts";
 
 export interface Settings {
   closeOnDone: boolean;

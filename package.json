@@ -1,18 +1,22 @@
 {
   "name": "pi-herdr-subagents",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
+  "private": true,
   "license": "MIT",
-  "description": "Thin herdr-backed subagent spawning, messaging and orchestration for pi",
+  "description": "herdr-backed subagent spawning and messaging across pi and Claude Code",
+  "workspaces": ["packages/*"],
+  "engines": { "node": ">=26" },
   "pi": {
-    "extensions": [
-      "./src/index.ts"
-    ]
+    "extensions": ["./packages/pi/src/index.ts"]
+  },
+  "bin": {
+    "herdr-subagents-mcp": "./packages/claude/bin/herdr-subagents-mcp.ts"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src/ test/"
+    "lint": "biome check packages/"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.14",

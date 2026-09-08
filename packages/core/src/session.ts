@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { log } from "./herdr.js";
+import { log } from "./herdr.ts";
 
 export interface Report {
   text: string;

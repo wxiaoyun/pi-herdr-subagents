@@ -10,17 +10,17 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   type AgentInfo,
   h as defaultHerdr,
   type Herdr,
   HerdrError,
   log,
-} from "./herdr.js";
-import type { Profile } from "./profiles.js";
-import { formatUsage, lastSpeaker, type Report, readReport } from "./session.js";
-import type { Settings } from "./settings.js";
+} from "./herdr.ts";
+import type { Harness, Host } from "./host.ts";
+import type { Profile } from "./profiles.ts";
+import { formatUsage, lastSpeaker, type Report, readReport } from "./session.ts";
+import type { Settings } from "./settings.ts";
 
 export type ChildStatus =
   "queued" | "starting" | "running" | "blocked" | "done" | "timeout" | "killed";
@@ -28,6 +28,7 @@ export type ChildStatus =
 export interface Child {
   id: string;
   profile: string;
+  harness: Harness;
   model?: string;
   description: string;
   pane?: string;
@@ -44,6 +45,7 @@ export interface SpawnOpts {
   prompt: string;
   description: string;
   profile: Profile;
+  harness: Harness;
   model?: string;
   thinking?: string;
   cwd: string;
@@ -61,10 +63,11 @@ export interface SpawnResult {
   text: string;
 }
 
-export const ENV_PARENT = "PI_HERDR_SUBAGENT_PARENT";
-export const ENV_DEPTH = "PI_HERDR_SUBAGENT_DEPTH";
-export const ENV_ID = "PI_HERDR_SUBAGENT_ID";
-export const ENV_PROFILE = "PI_HERDR_SUBAGENT_PROFILE";
+export const ENV_PARENT = "HERDR_SUBAGENT_PARENT";
+export const ENV_DEPTH = "HERDR_SUBAGENT_DEPTH";
+export const ENV_ID = "HERDR_SUBAGENT_ID";
+export const ENV_PROFILE = "HERDR_SUBAGENT_PROFILE";
+export const ENV_HARNESS = "HERDR_SUBAGENT_HARNESS";
 
 const SPAWN_TOOLS = ["Agent", "get_subagent_result", "kill_subagent"];
 
@@ -80,11 +83,15 @@ export class Manager {
   private live = 0;
   private pending: Array<() => void> = [];
 
-  constructor(
-    private pi: ExtensionAPI,
-    private settings: Settings,
-    private h: Herdr = defaultHerdr,
-  ) {}
+  private host: Host;
+  private settings: Settings;
+  private h: Herdr;
+
+  constructor(host: Host, settings: Settings, h: Herdr = defaultHerdr) {
+    this.host = host;
+    this.settings = settings;
+    this.h = h;
+  }
 
   list(): Child[] {
     return [...this.children.values()];
@@ -231,6 +238,7 @@ export class Manager {
     const child: Child = {
       id: await this.newId(o.name ?? o.profile.name),
       profile: o.profile.name,
+      harness: o.harness,
       model: this.model(o),
       description: o.description,
       background: o.background,
@@ -480,15 +488,7 @@ export class Manager {
   }
 
   private deliver(child: Child): void {
-    const text = this.formatReport(child);
-    if (this.settings.notify === "followUp") {
-      this.pi.sendUserMessage(text, { deliverAs: "followUp" });
-    } else {
-      this.pi.sendMessage(
-        { customType: "herdr-subagent", content: text, display: true },
-        { deliverAs: "nextTurn" },
-      );
-    }
+    this.host.deliver(this.formatReport(child), this.settings.notify);
   }
 
   // ---- inspect / message / kill ---------------------------------------------
