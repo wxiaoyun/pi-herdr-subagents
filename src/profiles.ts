@@ -38,8 +38,8 @@ export const BUILTIN_PROFILES: Profile[] = [
   {
     name: "Scout",
     description:
-      "Read-only fast search agent (read, bash, grep, find, ls). Locate files, symbols, usages. Pick a cheap fast model for it. Cannot spawn subagents.",
-    tools: READ_ONLY_TOOLS,
+      "Read-only fast search agent (read, bash, grep, find, ls, web_search). Locate files, symbols, usages, or web facts. Pick a cheap fast model for it. Cannot spawn subagents.",
+    tools: [...READ_ONLY_TOOLS, "web_search"],
     promptMode: "append",
     systemPrompt:
       "You are a read-only scout. Never edit files. Find what was asked, report exact paths, line numbers and short quotes. Be brief.",
