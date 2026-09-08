@@ -19,7 +19,7 @@ import {
   log,
 } from "./herdr.js";
 import type { Profile } from "./profiles.js";
-import { formatUsage, type Report, lastSpeaker, readReport } from "./session.js";
+import { formatUsage, lastSpeaker, type Report, readReport } from "./session.js";
 import type { Settings } from "./settings.js";
 
 export type ChildStatus =
