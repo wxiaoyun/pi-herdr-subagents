@@ -71,7 +71,7 @@ describe("claude child spawn", () => {
     expect(flag("--name")).toBe(id);
     expect(flag("--model")).toBe("claude-sonnet-4-5");
     expect(flag("--effort")).toBe("low");
-    expect(flag("--permission-mode")).toBe("bypassPermissions");
+    expect(flag("--permission-mode")).toBe("acceptEdits");
     expect(JSON.parse(flag("--mcp-config")).mcpServers.herdr.args[0]).toMatch(
       /herdr-subagents-mcp\.ts$/,
     );

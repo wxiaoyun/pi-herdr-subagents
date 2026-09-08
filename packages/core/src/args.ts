@@ -115,9 +115,10 @@ function claudeArgs(c: ChildSpec, s: Settings): string[] {
     // A profile that enumerates its tools has approved them: never prompt.
     args.push("--tools", list, "--allowedTools", list);
   }
-  // Children run unattended, like pi children. claudeArgs may tighten this.
+  // bypassPermissions shows a startup confirmation that blocks the pane, so
+  // edits are auto-accepted and everything else prompts. claudeArgs may change it.
   if (!s.claudeArgs.includes("--permission-mode"))
-    args.push("--permission-mode", "bypassPermissions");
+    args.push("--permission-mode", "acceptEdits");
   args.push("--mcp-config", mcpConfig());
   if (c.session) args.push("--resume", c.session);
   return [...args, ...s.claudeArgs];
