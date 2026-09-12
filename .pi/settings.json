@@ -4,7 +4,9 @@
     {
       "source": "git:github.com/wxiaoyun/pi-herdr-subagents",
       "autoload": false,
-      "extensions": ["-src/index.ts"]
+      "extensions": [
+        "-packages/pi/src/index.ts"
+      ]
     }
   ]
 }
