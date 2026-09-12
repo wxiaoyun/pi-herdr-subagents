@@ -573,6 +573,7 @@ describe("machines and idle children", () => {
       expect(r.text).toContain("hi from box");
       expect(r.text).toContain("| box |");
       expect(m.children.get(r.id)?.machine).toEqual(box);
+      expect(r.id).toMatch(/^claude-general-purpose-\d+$/);
       await m.kill(r.id);
       await m.spawn({ ...base, harness: "claude" });
     } finally {
@@ -641,7 +642,7 @@ describe("machines and idle children", () => {
     expect(m.list().map((c) => c.status)).toEqual(["idle", "killed"]);
   });
 
-  it("a startup dialog returns blocked at once, the prompt goes in after idle", async () => {
+  it("a startup dialog pauses the child until a person answers, then the prompt goes in", async () => {
     const seen: string[] = [];
     const sent: string[] = [];
     const fake: Herdr = {
@@ -662,12 +663,20 @@ describe("machines and idle children", () => {
       },
     };
     const m = new Manager({ ...piStub(), deliver: (t) => sent.push(t) }, DEFAULTS, fake);
+    // foreground: the parent keeps waiting while a person answers
     const r = await m.spawn(base);
-    expect(r.status).toBe("blocked");
-    expect(r.text).toContain("startup prompt in pane w1:p9");
+    expect(r.status).toBe("idle");
+    expect(seen).toEqual(["wait idle", "prompt go"]);
+    expect(sent).toHaveLength(0);
+    // background: blocked comes back at once, the report is delivered later
+    seen.length = 0;
+    const b = await m.spawn({ ...base, background: true });
+    expect(b.status).toBe("blocked");
+    expect(b.text).toContain("startup prompt in pane w1:p9");
+    expect(b.text).toContain("A person has to answer it");
     await new Promise((res) => setTimeout(res, 10));
     expect(seen).toEqual(["wait idle", "prompt go"]);
-    expect(m.children.get(r.id)?.status).toBe("idle");
+    expect(m.children.get(b.id)?.status).toBe("idle");
     expect(sent).toHaveLength(1);
   });
 

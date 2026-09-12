@@ -44,9 +44,9 @@ Claude Code children spawned by either parent get the MCP server injected automa
 | `KillAgent`      | Close the child's pane.                                                                                                                                                                                                                                                                                                                              |
 | `ListAgents`     | Children of this session with id, status, profile, harness and machine.                                                                                                                                                                                                                                                                              |
 
-Child ids are `<parent harness>-<name>-<n>`, for example `pi-scout-2`, unique among the live agents on the child's machine.
+Child ids are `<child harness>-<name>-<n>`, for example `claude-scout-2`, unique among the live agents on the child's machine.
 
-A child that stops on a startup dialog (Claude Code's folder trust prompt, a login) comes back at once as `blocked`, whatever the wait mode. Answer the dialog in its pane, or send keys with `SendMessage kind=keys` (Claude's trust prompt wants `down enter`, plain `enter` picks "No, exit"). The task prompt goes in once the child is idle and the report arrives as a message. A child that exits during startup reports that and stays `idle` for `resume`.
+A child that stops on a startup dialog (Claude Code's folder trust prompt, a login) pauses until a person answers it in the pane. The parent never answers it. A foreground spawn keeps waiting, a background spawn returns `blocked` at once. The task prompt goes in once the child is idle and the report follows as usual. A child that exits during startup reports that and stays `idle` for `resume`.
 
 A child's turn ends in status `idle`: its pane stays open and it keeps its context. Continue it with `SendMessage` (background) or `Agent` with `resume` (blocks like a spawn). Close it with `KillAgent` or by ending the parent session. Set `closeOnDone: true` to close panes at the end of every turn instead.
 

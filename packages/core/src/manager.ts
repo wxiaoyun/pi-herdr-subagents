@@ -167,12 +167,13 @@ export class Manager {
     return found;
   }
 
-  private async newId(base: string, h: Herdr): Promise<string> {
+  /** `<child harness>-<name>-<n>`, unique among the live agents on the child's machine. */
+  private async newId(base: string, harness: Harness, h: Herdr): Promise<string> {
     const live = new Set((await h.agentList().catch(() => [])).map((a) => a.name));
     let id: string;
     do {
       this.counter++;
-      id = `${this.pHarness.harness}-${slug(base)}-${this.counter}`.slice(0, 32);
+      id = `${harness}-${slug(base)}-${this.counter}`.slice(0, 32);
     } while (this.children.has(id) || live.has(id));
     return id;
   }
@@ -258,21 +259,43 @@ export class Manager {
   }
 
   /**
-   * The child sits on a startup dialog. Hand control back at once, whatever
-   * the wait mode, and send the task prompt once the dialog is answered.
+   * The child sits on a startup dialog (folder trust, login). Only a person
+   * answers it, never the parent: the child pauses until it is idle, then the
+   * task prompt goes in. Foreground keeps waiting, background returns
+   * `blocked` and delivers the report later.
    */
-  private awaitStartup(child: Child, o: SpawnOpts): SpawnResult {
-    child.background = true;
-    this.spawnWatcher(child, async (signal) => {
-      await this.hFor(child).agentWaitUntil(child.id, ["idle"], o.timeoutMs);
+  private async awaitStartup(
+    child: Child,
+    o: SpawnOpts,
+    signal?: AbortSignal,
+  ): Promise<SpawnResult> {
+    const settle = async (s?: AbortSignal) => {
+      await this.hFor(child).agentWaitUntil(child.id, ["idle"], o.timeoutMs, s);
       if (!(await this.learnSession(child, o)))
         throw new Error(`${child.id} exited during startup (the dialog was probably declined)`);
-      return this.hFor(child).agentPromptWait(child.id, o.prompt, o.timeoutMs, signal);
+    };
+    if (!o.background) {
+      try {
+        await settle(signal);
+      } catch (e) {
+        if (signal?.aborted) {
+          log("startup_detach", { id: child.id });
+          child.background = true;
+          return this.awaitStartup(child, { ...o, background: true });
+        }
+        this.lost(child, e);
+        throw e;
+      }
+      return this.foreground(child, o.prompt, o.timeoutMs, signal);
+    }
+    this.spawnWatcher(child, async (s) => {
+      await settle();
+      return this.hFor(child).agentPromptWait(child.id, o.prompt, o.timeoutMs, s);
     });
     return {
       id: child.id,
       status: "blocked",
-      text: `${child.id} is waiting on a startup prompt in pane ${child.pane}${this.where(child)} (folder trust, login, or similar). Answer it in the pane, or send keys with SendMessage kind=keys (for example "enter"). The task prompt is sent once the child is idle and its report arrives as a message.`,
+      text: `${child.id} is waiting on a startup prompt in pane ${child.pane}${this.where(child)} (folder trust, login, or similar). A person has to answer it in the pane. The task prompt is sent once the child is idle and its report arrives as a message.`,
     };
   }
 
@@ -339,7 +362,7 @@ export class Manager {
 
     const machine = await this.machineFor(o.machine);
     const child: Child = {
-      id: await this.newId(o.name ?? o.profile.name, this.hFor({ machine })),
+      id: await this.newId(o.name ?? o.profile.name, o.harness, this.hFor({ machine })),
       profile: o.profile.name,
       harness: o.harness,
       machine,
@@ -354,7 +377,7 @@ export class Manager {
 
     const run = async () => {
       await this.launch(child, o);
-      if (child.status === "blocked") this.awaitStartup(child, o);
+      if (child.status === "blocked") await this.awaitStartup(child, o);
       else this.watchPrompt(child, o.prompt, o.timeoutMs);
     };
 
@@ -388,7 +411,7 @@ export class Manager {
       this.fail(child, e);
       throw e;
     });
-    if (child.status === "blocked") return this.awaitStartup(child, o);
+    if (child.status === "blocked") return this.awaitStartup(child, o, signal);
     return this.foreground(child, o.prompt, o.timeoutMs, signal);
   }
 
@@ -420,7 +443,7 @@ export class Manager {
         this.fail(child, e);
         throw e;
       });
-      if (child.status === "blocked") return this.awaitStartup(child, o);
+      if (child.status === "blocked") return this.awaitStartup(child, o, signal);
     } else if (child.released) {
       await this.acquire(signal);
       child.released = false;

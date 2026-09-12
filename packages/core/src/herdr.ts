@@ -302,6 +302,7 @@ export function bind(machine?: Machine) {
       id: string,
       states: string[],
       timeoutMs: number,
+      signal?: AbortSignal,
     ): Promise<AgentInfo> {
       const args = [
         "agent",
@@ -310,7 +311,7 @@ export function bind(machine?: Machine) {
         ...states.flatMap((s) => ["--until", s]),
       ];
       if (timeoutMs > 0) args.push("--timeout", String(timeoutMs));
-      const r = await call(args);
+      const r = await call(args, { signal });
       return toAgentInfo(r.agent);
     },
     async agentGet(id: string): Promise<AgentInfo> {
