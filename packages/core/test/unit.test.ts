@@ -641,6 +641,36 @@ describe("machines and idle children", () => {
     expect(m.list().map((c) => c.status)).toEqual(["idle", "killed"]);
   });
 
+  it("a startup dialog returns blocked at once, the prompt goes in after idle", async () => {
+    const seen: string[] = [];
+    const sent: string[] = [];
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      agentStart: async () => {
+        throw new HerdrError("blocked during startup", "agent_not_ready");
+      },
+      agentWaitUntil: async (_id, states) => {
+        seen.push(`wait ${states.join(",")}`);
+        return { status: "idle", pane: "w1:p9" };
+      },
+      agentPromptWait: async (_id, text) => {
+        seen.push(`prompt ${text}`);
+        return { status: "idle", pane: "w1:p9" };
+      },
+      paneClose: async () => {
+        seen.push("close");
+      },
+    };
+    const m = new Manager({ ...piStub(), deliver: (t) => sent.push(t) }, DEFAULTS, fake);
+    const r = await m.spawn(base);
+    expect(r.status).toBe("blocked");
+    expect(r.text).toContain("startup prompt in pane w1:p9");
+    await new Promise((res) => setTimeout(res, 10));
+    expect(seen).toEqual(["wait idle", "prompt go"]);
+    expect(m.children.get(r.id)?.status).toBe("idle");
+    expect(sent).toHaveLength(1);
+  });
+
   it("keeps the pane after a turn, SendMessage resumes it and delivers the report", async () => {
     const closed: string[] = [];
     const prompts: string[] = [];

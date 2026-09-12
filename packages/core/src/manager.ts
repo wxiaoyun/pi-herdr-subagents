@@ -222,6 +222,13 @@ export class Manager {
       await h.stage(staged, stagedAs);
       await h.agentStart(child.id, child.pane, o.harness, args);
     } catch (e) {
+      if (e instanceof HerdrError && e.code === "agent_not_ready") {
+        // A startup dialog (folder trust, login). herdr keeps the pane and
+        // the name; the prompt goes in once someone answers it.
+        log("agent_start_blocked", { id: child.id, pane: child.pane });
+        child.status = "blocked";
+        return;
+      }
       log("agent_start_failed", { id: child.id, error: String(e) });
       await this.closePane(child);
       throw e;
@@ -229,7 +236,13 @@ export class Manager {
       rmSync(staged, { recursive: true, force: true });
       await h.unstage(stagedAs);
     }
-    const info = await h.agentGet(child.id).catch(() => undefined);
+    await this.learnSession(child, o);
+  }
+
+  private async learnSession(child: Child, o: SpawnOpts): Promise<AgentInfo | undefined> {
+    const info = await this.hFor(child)
+      .agentGet(child.id)
+      .catch(() => undefined);
     child.sessionId = info?.sessionId;
     child.sessionPath =
       info?.sessionPath ??
@@ -241,6 +254,26 @@ export class Manager {
       machine: child.machine?.label,
       session: child.sessionPath,
     });
+    return info;
+  }
+
+  /**
+   * The child sits on a startup dialog. Hand control back at once, whatever
+   * the wait mode, and send the task prompt once the dialog is answered.
+   */
+  private awaitStartup(child: Child, o: SpawnOpts): SpawnResult {
+    child.background = true;
+    this.spawnWatcher(child, async (signal) => {
+      await this.hFor(child).agentWaitUntil(child.id, ["idle"], o.timeoutMs);
+      if (!(await this.learnSession(child, o)))
+        throw new Error(`${child.id} exited during startup (the dialog was probably declined)`);
+      return this.hFor(child).agentPromptWait(child.id, o.prompt, o.timeoutMs, signal);
+    });
+    return {
+      id: child.id,
+      status: "blocked",
+      text: `${child.id} is waiting on a startup prompt in pane ${child.pane}${this.where(child)} (folder trust, login, or similar). Answer it in the pane, or send keys with SendMessage kind=keys (for example "enter"). The task prompt is sent once the child is idle and its report arrives as a message.`,
+    };
   }
 
   // ---- placement ------------------------------------------------------------
@@ -321,7 +354,8 @@ export class Manager {
 
     const run = async () => {
       await this.launch(child, o);
-      this.watchPrompt(child, o.prompt, o.timeoutMs);
+      if (child.status === "blocked") this.awaitStartup(child, o);
+      else this.watchPrompt(child, o.prompt, o.timeoutMs);
     };
 
     if (o.background) {
@@ -340,6 +374,7 @@ export class Manager {
         this.fail(child, e);
         throw e;
       });
+      if (child.status === "blocked") return this.awaitStartup(child, o);
       this.watchPrompt(child, o.prompt, o.timeoutMs);
       return {
         id: child.id,
@@ -353,6 +388,7 @@ export class Manager {
       this.fail(child, e);
       throw e;
     });
+    if (child.status === "blocked") return this.awaitStartup(child, o);
     return this.foreground(child, o.prompt, o.timeoutMs, signal);
   }
 
@@ -384,6 +420,7 @@ export class Manager {
         this.fail(child, e);
         throw e;
       });
+      if (child.status === "blocked") return this.awaitStartup(child, o);
     } else if (child.released) {
       await this.acquire(signal);
       child.released = false;

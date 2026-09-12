@@ -242,7 +242,7 @@ export function bind(machine?: Machine) {
       pane: string,
       kind: string,
       agentArgs: string[],
-      timeoutMs = 60000,
+      timeoutMs = 120000,
     ): Promise<void> {
       const deadline = Date.now() + 15000;
       for (;;) {
