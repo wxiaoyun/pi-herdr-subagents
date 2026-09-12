@@ -1,12 +1,12 @@
 /**
- * host.ts: what the parent harness must provide. The pi extension and the
- * Claude MCP server are the two implementations.
+ * parent-harness.ts: what the parent harness must provide. The pi extension
+ * and the Claude MCP server are the two implementations.
  */
 export type Harness = "pi" | "claude";
 
 export const HARNESSES: Harness[] = ["pi", "claude"];
 
-export interface Host {
+export interface ParentHarness {
   harness: Harness;
   /** Parent defaults, applied only to children of the same harness. */
   model?: () => string | undefined;

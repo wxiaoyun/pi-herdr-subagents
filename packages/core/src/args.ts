@@ -5,7 +5,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Harness } from "./host.ts";
+import type { Harness } from "./parent-harness.ts";
 import type { Profile } from "./profiles.ts";
 import type { Settings } from "./settings.ts";
 
@@ -18,6 +18,10 @@ export interface ChildSpec {
   session?: string;
   /** Directory for staged prompt files; omit to force inline prompts. */
   stagedDir?: string;
+  /** Where `stagedDir` is visible to the child, when not the same path. */
+  stagedAs?: string;
+  /** Machine child: this project is not installed there, so no spawn tools. */
+  remote?: boolean;
 }
 
 export const SPAWN_TOOLS = ["Agent", "GetAgentResult", "KillAgent", "ListAgents"];
@@ -52,7 +56,7 @@ function promptArg(c: ChildSpec): { file: boolean; value: string } | undefined {
   if (c.stagedDir && value.includes("\n")) {
     const file = join(c.stagedDir, "system-prompt.md");
     writeFileSync(file, value, { mode: 0o600 });
-    return { file: true, value: file };
+    return { file: true, value: join(c.stagedAs ?? c.stagedDir, "system-prompt.md") };
   }
   return { file: false, value };
 }
@@ -119,7 +123,7 @@ function claudeArgs(c: ChildSpec, s: Settings): string[] {
   // edits are auto-accepted and everything else prompts. claudeArgs may change it.
   if (!s.claudeArgs.includes("--permission-mode"))
     args.push("--permission-mode", "acceptEdits");
-  args.push("--mcp-config", mcpConfig());
+  if (!c.remote) args.push("--mcp-config", mcpConfig());
   if (c.session) args.push("--resume", c.session);
   return [...args, ...s.claudeArgs];
 }

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "./herdr.ts";
-import type { Harness } from "./host.ts";
+import type { Harness } from "./parent-harness.ts";
 
 export interface Report {
   text: string;
@@ -14,14 +14,16 @@ const EMPTY = (): Report => ({
   usage: { input: 0, output: 0, cost: 0, turns: 0 },
 });
 
-function entries(sessionPath: string): any[] {
-  let raw: string;
+function readLocal(sessionPath: string): string {
   try {
-    raw = readFileSync(sessionPath, "utf8");
+    return readFileSync(sessionPath, "utf8");
   } catch (e) {
     log("read_session", { sessionPath, error: String(e) });
-    return [];
+    return "";
   }
+}
+
+function entries(raw: string): any[] {
   const out: any[] = [];
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
@@ -41,9 +43,9 @@ const textOf = (m: any): string =>
     .join("");
 
 /** pi: `{type:"message", message:{role, content, usage:{input,output,cost:{total}}}}` */
-function readPi(sessionPath: string): Report {
+function readPi(raw: string): Report {
   const r = EMPTY();
-  for (const e of entries(sessionPath)) {
+  for (const e of entries(raw)) {
     const m = e?.message;
     if (e?.type !== "message" || m?.role !== "assistant") continue;
     r.usage.turns++;
@@ -62,10 +64,10 @@ function readPi(sessionPath: string): Report {
  * usage is counted once per id. The format is internal to Claude Code; on
  * any surprise this yields no text and the caller falls back to the screen.
  */
-function readClaude(sessionPath: string): Report {
+function readClaude(raw: string): Report {
   const r = EMPTY();
   const seen = new Set<string>();
-  for (const e of entries(sessionPath)) {
+  for (const e of entries(raw)) {
     const m = e?.message;
     if (e?.type !== "assistant" || m?.role !== "assistant") continue;
     const id = String(m.id ?? r.usage.turns);
@@ -81,22 +83,26 @@ function readClaude(sessionPath: string): Report {
   return r;
 }
 
-/** Last assistant message text plus summed usage from a child session file. */
-export function readReport(harness: Harness, sessionPath: string): Report {
-  return harness === "claude" ? readClaude(sessionPath) : readPi(sessionPath);
+/** Last assistant message text plus summed usage from session file contents. */
+export function parseReport(harness: Harness, raw: string): Report {
+  return harness === "claude" ? readClaude(raw) : readPi(raw);
 }
+
+/** `parseReport` over a local session file. */
+export const readReport = (harness: Harness, sessionPath: string): Report =>
+  parseReport(harness, readLocal(sessionPath));
 
 /**
  * Role of the last message entry, or undefined when the file has no messages
  * yet (missing file, boot in progress, garbage only). A Claude assistant entry
  * that stopped for a tool call is still mid-turn and counts as the user's.
  */
-export function lastSpeaker(
+export function parseLastSpeaker(
   harness: Harness,
-  sessionPath: string,
+  raw: string,
 ): string | undefined {
   let last: string | undefined;
-  for (const e of entries(sessionPath)) {
+  for (const e of entries(raw)) {
     const isMsg =
       harness === "claude"
         ? e?.type === "user" || e?.type === "assistant"
@@ -110,17 +116,27 @@ export function lastSpeaker(
   return last;
 }
 
+/** `parseLastSpeaker` over a local session file. */
+export const lastSpeaker = (
+  harness: Harness,
+  sessionPath: string,
+): string | undefined => parseLastSpeaker(harness, readLocal(sessionPath));
+
 /**
  * Claude Code keeps sessions at `<config dir>/projects/<encoded cwd>/<id>.jsonl`
- * and herdr only reports the id. pi reports the path itself.
+ * and herdr only reports the id. pi reports the path itself. On a Machine the
+ * config dir is unknown, so the path starts with `~/.claude` for ssh to expand.
  */
 export function sessionPathFor(
   harness: Harness,
   cwd: string,
   sessionId: string | undefined,
+  remote = false,
 ): string | undefined {
   if (harness !== "claude" || !sessionId) return undefined;
-  const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+  const dir = remote
+    ? "~/.claude"
+    : (process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"));
   return join(dir, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"), `${sessionId}.jsonl`);
 }
 

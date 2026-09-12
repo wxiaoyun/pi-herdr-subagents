@@ -4,7 +4,6 @@
  */
 import { type Static, type TSchema, Type } from "typebox";
 import { type Herdr, log } from "./herdr.ts";
-import type { Harness, Host } from "./host.ts";
 import {
   ENV_DEPTH,
   ENV_ID,
@@ -12,6 +11,7 @@ import {
   ENV_PROFILE,
   Manager,
 } from "./manager.ts";
+import type { Harness, ParentHarness } from "./parent-harness.ts";
 import { loadProfiles } from "./profiles.ts";
 import { loadSettings } from "./settings.ts";
 
@@ -59,22 +59,22 @@ const AgentParams = Type.Object({
     Type.String({ description: "off|minimal|low|medium|high|xhigh|max" }),
   ),
   cwd: Type.Optional(
-    Type.String({ description: "Working directory. Default parent cwd." }),
+    Type.String({
+      description:
+        "Working directory. Default parent cwd. Must exist on the machine the child runs on.",
+    }),
+  ),
+  machine: Type.Optional(
+    Type.String({
+      description:
+        "Saved herdr machine (id or label from `herdr machine list`) to run the child on. Default: this machine. A machine child cannot spawn children.",
+    }),
   ),
   run_in_background: Type.Optional(
     Type.Boolean({
       description:
         "false (default): block until the child's turn ends and return its report. true: return at once, the report arrives later as a message.",
     }),
-  ),
-  placement: Type.Optional(
-    Type.Union(
-      [Type.Literal("auto"), Type.Literal("split"), Type.Literal("tab")],
-      {
-        description:
-          "Where the child's pane goes. auto (default): split beside the parent until splitCap panes, then a tab in the child workspace. split / tab force one.",
-      },
-    ),
   ),
   name: Type.Optional(
     Type.String({ description: "Short handle used in the agent id." }),
@@ -127,9 +127,9 @@ export interface ToolSet {
   manager(): Manager;
 }
 
-/** Build the tools for a host. `cwd` is resolved per call so project config is live. */
+/** Build the tools for a parent harness. `cwd` is resolved per call so project config is live. */
 export function createTools(
-  host: Host,
+  host: ParentHarness,
   cwd: () => string,
   herdr?: Herdr,
 ): ToolSet {
@@ -146,7 +146,7 @@ export function createTools(
   const agent: ToolDef<typeof AgentParams> = {
     name: "Agent",
     description:
-      "Spawn a child coding agent (pi or Claude Code) in a herdr pane. By default blocks until the child's turn ends and returns its report; run_in_background returns at once and the report arrives later as a message. The child stays alive and idle afterwards: continue it with SendMessage (background) or `resume` (same wait semantics as a spawn), close it with KillAgent. placement picks split beside you or a tab in the child workspace.",
+      "Spawn a child coding agent (pi or Claude Code) in its own herdr tab, on this machine or on a saved herdr machine. By default blocks until the child's turn ends and returns its report; run_in_background returns at once and the report arrives later as a message. The child stays alive and idle afterwards: continue it with SendMessage (background) or `resume` (same wait semantics as a spawn), close it with KillAgent.",
     parameters: AgentParams,
     async execute(p, signal) {
       const dir = cwd();
@@ -182,8 +182,8 @@ export function createTools(
               (harness === host.harness ? host.model?.() : undefined),
             thinking: p.thinking ?? profile.thinking ?? host.thinking?.(),
             cwd: p.cwd ?? dir,
+            machine: p.machine,
             background: p.run_in_background ?? false,
-            placement: p.placement,
             name: p.name,
             resume: p.resume,
             timeoutMs: p.timeout_ms ?? settings.defaultTimeoutMs,
@@ -258,14 +258,14 @@ export function createTools(
 
   const list: ToolDef<typeof ListParams> = {
     name: "ListAgents",
-    description: "Children of this session: id, profile, harness, status, one per line.",
+    description: "Children of this session: id, status, profile, harness, machine, one per line.",
     parameters: ListParams,
     async execute() {
       const kids = getManager().list();
       if (!kids.length) return ok("no children");
       return ok(
         kids
-          .map((c) => `${c.id}  ${c.status}  ${c.profile}  ${c.harness}  ${c.description}`)
+          .map((c) => `${c.id}  ${c.status}  ${c.profile}  ${c.harness}  ${c.machine?.label ?? "local"}  ${c.description}`)
           .join("\n"),
       );
     },

@@ -1,11 +1,11 @@
 /**
- * Claude Code host. Claude has no extension API, so reports are typed into
- * this session's own pane through herdr (they arrive as a user message) and
- * the blocked state is reported to herdr directly.
+ * Claude Code parent harness. Claude has no extension API, so reports are
+ * typed into this session's own pane through herdr (they arrive as a user
+ * message) and the blocked state is reported to herdr directly.
  */
-import { h as defaultHerdr, type Herdr, HerdrError, type Host, log } from "@herdr-subagents/core";
+import { h as defaultHerdr, type Herdr, HerdrError, log, type ParentHarness } from "@herdr-subagents/core";
 
-export function createClaudeHost(pane: string, h: Herdr = defaultHerdr): Host {
+export function createClaudeParent(pane: string, h: Herdr = defaultHerdr): ParentHarness {
   return {
     harness: "claude",
     // notify is ignored: typing into the pane always triggers a turn.

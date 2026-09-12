@@ -4,7 +4,7 @@
  */
 import { createInterface } from "node:readline";
 import { createTools, log, type ToolSet } from "@herdr-subagents/core";
-import { createClaudeHost } from "./host.ts";
+import { createClaudeParent } from "./parent-harness.ts";
 
 const PROTOCOL = "2025-06-18";
 
@@ -74,7 +74,7 @@ export function serve(tools: ToolSet): void {
 export function main(): void {
   const pane =
     process.env.HERDR_ENV === "1" ? process.env.HERDR_PANE_ID : undefined;
-  const host = createClaudeHost(pane ?? "");
+  const host = createClaudeParent(pane ?? "");
   const tools = createTools(host, () => process.cwd());
   if (!pane) {
     // Still serve, but every tool errors: Claude shows a clear reason instead of a dead server.

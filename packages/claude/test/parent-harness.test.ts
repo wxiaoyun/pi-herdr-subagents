@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { type Herdr, HerdrError, type ToolSet } from "@herdr-subagents/core";
 import { describe, expect, it } from "vitest";
-import { createClaudeHost } from "../src/host.ts";
+import { createClaudeParent } from "../src/parent-harness.ts";
 import { handler } from "../src/server.ts";
 
 const herdr = (over: Partial<Herdr>): Herdr =>
@@ -18,7 +18,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 describe("claude host", () => {
   it("types a report into its own pane", async () => {
     const prompts: string[] = [];
-    const host = createClaudeHost("w1:p1", herdr({ agentPrompt: async (id, t) => { prompts.push(`${id}:${t}`); } }));
+    const host = createClaudeParent("w1:p1", herdr({ agentPrompt: async (id, t) => { prompts.push(`${id}:${t}`); } }));
     host.deliver("report text", "passive");
     await tick();
     expect(prompts).toEqual(["w1:p1:report text"]);
@@ -26,7 +26,7 @@ describe("claude host", () => {
 
   it("falls back to pane run when the pane is blocked", async () => {
     const runs: string[] = [];
-    const host = createClaudeHost(
+    const host = createClaudeParent(
       "w1:p1",
       herdr({
         agentPrompt: async () => { throw new HerdrError("blocked", "agent_blocked"); },
@@ -40,7 +40,7 @@ describe("claude host", () => {
 
   it("reports blocked and working to herdr", async () => {
     const states: string[] = [];
-    const host = createClaudeHost("w1:p1", herdr({ paneReportAgent: async (_p, s) => { states.push(s); } }));
+    const host = createClaudeParent("w1:p1", herdr({ paneReportAgent: async (_p, s) => { states.push(s); } }));
     host.setBlocked(true, "awaiting parent");
     host.setBlocked(false);
     await tick();

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { log } from "./herdr.ts";
-import { HARNESSES, type Harness } from "./host.ts";
+import { HARNESSES, type Harness } from "./parent-harness.ts";
 import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter } from "./paths.ts";
 
 export interface Profile {

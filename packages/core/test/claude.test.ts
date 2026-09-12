@@ -3,20 +3,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Herdr } from "../src/herdr.ts";
-import type { Host } from "../src/host.ts";
 import { Manager, type SpawnOpts } from "../src/manager.ts";
+import type { ParentHarness } from "../src/parent-harness.ts";
 import { BUILTIN_PROFILES, loadProfiles, type Profile } from "../src/profiles.ts";
 import { lastSpeaker, readReport, sessionPathFor } from "../src/session.ts";
 import { DEFAULTS } from "../src/settings.ts";
 import { createTools } from "../src/tools.ts";
 
-const host = (): Host => ({ harness: "pi", deliver: () => {}, setBlocked: () => {} });
+const host = (): ParentHarness => ({ harness: "pi", deliver: () => {}, setBlocked: () => {} });
 
 const emptyHerdr = (): Herdr => ({
-  tabCreate: async () => "w1:p9",
-  paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
+  tabCreate: async (_l, cwd) => ({ pane: "w1:p9", cwd }),
+  machine() {
+    return this;
+  },
+  machineList: async () => [],
+  readFile: async (p) => readFileSync(p, "utf8"),
+  stage: async () => {},
+  unstage: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
   agentStart: async () => {},
@@ -249,7 +253,7 @@ describe("harness selection", () => {
         kinds.push([kind, a]);
       },
     };
-    const h: Host = { ...host(), model: () => "anthropic/claude-x" };
+    const h: ParentHarness = { ...host(), model: () => "anthropic/claude-x" };
     const tools = createTools(h, cwd, fake);
     await tools.agent.execute({ prompt: "p", description: "d", harness: "claude", run_in_background: true });
     await tools.agent.execute({ prompt: "p", description: "d", run_in_background: true });

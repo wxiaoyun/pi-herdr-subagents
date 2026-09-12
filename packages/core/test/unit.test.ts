@@ -9,15 +9,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Herdr, HerdrError, LOG_ENV, log } from "../src/herdr.ts";
-import type { Host } from "../src/host.ts";
-import { balanceOps, childWorkspaceLabel, pickSplit } from "../src/layout.ts";
-import { Manager, type SpawnOpts } from "../src/manager.ts";
+import { childWorkspaceLabel, Manager, type SpawnOpts } from "../src/manager.ts";
+import type { ParentHarness } from "../src/parent-harness.ts";
 import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.ts";
 import { readReport } from "../src/session.ts";
 import { DEFAULTS, loadSettings } from "../src/settings.ts";
 
 /** Minimal host stub so background watchers can deliver without throwing. */
-const piStub = (): Host => ({
+const piStub = (): ParentHarness => ({
   harness: "pi",
   deliver: () => {},
   setBlocked: () => {},
@@ -27,10 +26,14 @@ const tmp = () => mkdtempSync(join(tmpdir(), "phs-"));
 
 /** Herdr stub with every method as a no-op; override per test. */
 const emptyHerdr = (): Herdr => ({
-  tabCreate: async () => "w1:p9",
-  paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
+  tabCreate: async (_l, cwd) => ({ pane: "w1:p9", cwd }),
+  machine() {
+    return this;
+  },
+  machineList: async () => [],
+  readFile: async (p) => readFileSync(p, "utf8"),
+  stage: async () => {},
+  unstage: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
   agentStart: async () => {},
@@ -146,7 +149,7 @@ describe("settings", () => {
     const agentDir = tmp();
     writeFileSync(
       join(agentDir, "herdr-subagents.json"),
-      JSON.stringify({ maxConcurrent: 2, splitCap: 5 }),
+      JSON.stringify({ maxConcurrent: 2, maxDepth: 5 }),
     );
     mkdirSync(join(cwd, ".pi"));
     writeFileSync(
@@ -156,7 +159,7 @@ describe("settings", () => {
     expect(loadSettings(cwd, agentDir)).toEqual({
       ...DEFAULTS,
       maxConcurrent: 7,
-      splitCap: 5,
+      maxDepth: 5,
       claudeArgs: ["--verbose"],
     });
   });
@@ -169,9 +172,6 @@ describe("profile prompt staging", () => {
     let fileAfterStart: boolean | undefined;
     const fake: Herdr = {
       ...emptyHerdr(),
-      paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
       agentStart: async (_id, _pane, _kind, args) => {
@@ -209,9 +209,6 @@ describe("profile prompt staging", () => {
     let args: string[] = [];
     const fake: Herdr = {
       ...emptyHerdr(),
-      paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
       agentStart: async (_id, _pane, _kind, a) => {
@@ -272,9 +269,6 @@ describe("prompt-wait stall recovery", () => {
     const closed: string[] = [];
     const fake: Herdr = {
       ...emptyHerdr(),
-      paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
       agentStart: async () => {},
@@ -303,7 +297,7 @@ describe("prompt-wait stall recovery", () => {
     });
     expect(r.status).toBe("done");
     expect(r.text).toContain("final answer");
-    expect(closed).toEqual(["w1:p8"]); // no stranded pane
+    expect(closed).toEqual(["w1:p9"]); // no stranded pane
   });
 
   it("does not finish a booting child with no assistant reply yet", async () => {
@@ -319,9 +313,6 @@ describe("prompt-wait stall recovery", () => {
     );
     const fake: Herdr = {
       ...emptyHerdr(),
-      paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
       agentStart: async () => {},
@@ -361,9 +352,6 @@ describe("prompt-wait stall recovery", () => {
     let polls = 0;
     const fake: Herdr = {
       ...emptyHerdr(),
-      paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
       agentStart: async () => {},
@@ -407,9 +395,6 @@ describe("prompt-wait stall recovery", () => {
   it("fails when the stalled child is not in a terminal state", async () => {
     const fake: Herdr = {
       ...emptyHerdr(),
-      paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
       agentStart: async () => {},
@@ -445,10 +430,14 @@ describe("manager queue", () => {
     let starts = 0;
     let waiters: Array<(v: any) => void> = [];
     const fake: Herdr = {
-      tabCreate: async () => "w1:p9",
-      paneSplit: async () => "w1:p8",
-  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
-  paneResize: async () => {},
+      tabCreate: async (_l, cwd) => ({ pane: "w1:p9", cwd }),
+  machine() {
+    return this;
+  },
+  machineList: async () => [],
+  readFile: async (p) => readFileSync(p, "utf8"),
+  stage: async () => {},
+  unstage: async () => {},
   workspaceLabel: async () => "ws",
   workspaceByLabel: async () => "w9",
       agentStart: async () => {
@@ -472,7 +461,7 @@ describe("manager queue", () => {
       paneClose: async () => {},
     };
     const sent: string[] = [];
-    const host: Host = {
+    const host: ParentHarness = {
       ...piStub(),
       deliver: (t: string) => {
         sent.push(t);
@@ -508,50 +497,7 @@ describe("manager queue", () => {
   });
 });
 
-describe("layout", () => {
-  const rect = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
-  // parent 93x44 | child a 93x22 over child b 93x22 (root split right 0.5, right column split down 0.5)
-  const grid = {
-    panes: [
-      { pane_id: "w1:p1", rect: rect(0, 0, 93, 44) },
-      { pane_id: "w1:p2", rect: rect(93, 0, 93, 22) },
-      { pane_id: "w1:p3", rect: rect(93, 22, 93, 22) },
-    ],
-    splits: [
-      { direction: "right" as const, ratio: 0.5, rect: rect(0, 0, 186, 44) },
-      { direction: "down" as const, ratio: 0.5, rect: rect(93, 0, 93, 44) },
-    ],
-  };
-
-  it("splits the biggest pane along its longer axis, ties go to a child", () => {
-    expect(pickSplit({ panes: [{ pane_id: "w1:p1", rect: rect(0, 0, 186, 44) }], splits: [] }, "w1:p1")).toEqual({ pane: "w1:p1", direction: "right" });
-    const two = {
-      panes: [
-        { pane_id: "w1:p1", rect: rect(0, 0, 93, 44) },
-        { pane_id: "w1:p2", rect: rect(93, 0, 93, 44) },
-      ],
-      splits: [],
-    };
-    expect(pickSplit(two, "w1:p1")).toEqual({ pane: "w1:p2", direction: "down" });
-    expect(pickSplit(grid, "w1:p1")).toEqual({ pane: "w1:p1", direction: "down" });
-  });
-
-  it("resizes each split to leaves-first over leaves-total", () => {
-    // root: 1 leaf left, 2 right, want 1/3: move the parent's right edge left by 0.1667
-    expect(balanceOps(grid)).toEqual([{ pane: "w1:p1", direction: "left", amount: 0.1667 }]);
-    const balanced = { ...grid, splits: [{ ...grid.splits[0], ratio: 1 / 3 }, grid.splits[1]] };
-    expect(balanceOps(balanced)).toEqual([]);
-    const tall = { ...grid, splits: [grid.splits[0], { ...grid.splits[1], ratio: 0.3 }] };
-    expect(balanceOps(tall)[1]).toEqual({ pane: "w1:p2", direction: "down", amount: 0.2 });
-  });
-
-  it("derives an idempotent child workspace label", () => {
-    expect(childWorkspaceLabel("proj")).toBe("proj-agents");
-    expect(childWorkspaceLabel("proj-agents")).toBe("proj-agents");
-  });
-});
-
-describe("placement and idle children", () => {
+describe("machines and idle children", () => {
   const base: SpawnOpts = {
     prompt: "go",
     description: "d",
@@ -562,42 +508,137 @@ describe("placement and idle children", () => {
     timeoutMs: 0,
     depth: 1,
   };
-  const full = () => ({
-    panes: [1, 2, 3, 4].map((n) => ({ pane_id: `w1:p${n}`, rect: { x: 0, y: 0, width: 10, height: 10 } })),
-    splits: [],
+  const box = { id: "abc123", label: "box", target: "me@box" };
+
+  it("derives an idempotent child workspace label", () => {
+    expect(childWorkspaceLabel("proj")).toBe("proj-agents");
+    expect(childWorkspaceLabel("proj-agents")).toBe("proj-agents");
   });
 
-  it("splits under the cap, tabs in the child workspace past it, honours forced placement", async () => {
+  it("every child gets a tab in the child workspace", async () => {
     const calls: string[] = [];
-    let panes = 1;
     const fake: Herdr = {
       ...emptyHerdr(),
-      paneLayout: async () => ({ ...full(), panes: full().panes.slice(0, panes) }),
-      paneSplit: async (pane, dir) => {
-        calls.push(`split ${pane} ${dir}`);
-        return `w1:p${++panes}`;
-      },
-      paneResize: async (op) => {
-        calls.push(`resize ${op.pane} ${op.direction} ${op.amount}`);
-      },
-      tabCreate: async (_l, _c, _e, ws) => {
-        calls.push(`tab ${ws}`);
-        return "w9:p1";
+      tabCreate: async (_l, cwd, _e, ws) => {
+        calls.push(`tab ${ws} ${cwd}`);
+        return { pane: "w9:p1", cwd };
       },
     };
+    const prev = process.env.HERDR_WORKSPACE_ID;
+    process.env.HERDR_WORKSPACE_ID = "w1";
+    try {
+      const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+      await m.spawn(base);
+      await m.spawn(base);
+    } finally {
+      if (prev === undefined) delete process.env.HERDR_WORKSPACE_ID;
+      else process.env.HERDR_WORKSPACE_ID = prev;
+    }
+    expect(calls).toEqual(["tab w9 /", "tab w9 /"]);
+  });
+
+  it("routes every call for a machine child through that machine, none without", async () => {
+    const seen: string[] = [];
+    const tagged = (tag: string): Herdr => ({
+      ...emptyHerdr(),
+      machine: (t) => tagged(t.label),
+      machineList: async () => [box],
+      tabCreate: async (_l, cwd, env) => {
+        seen.push(`${tag}:tab parent=${env.HERDR_SUBAGENT_PARENT}`);
+        return { pane: "w9:p1", cwd };
+      },
+      stage: async (dir, as) => {
+        seen.push(`${tag}:stage ${as === dir ? "same" : as.replace(/-[^-]+$/, "-X")}`);
+      },
+      agentStart: async (_i, _p, _k, args) => {
+        seen.push(`${tag}:start mcp=${args.includes("--mcp-config")}`);
+      },
+      agentPromptWait: async () => {
+        seen.push(`${tag}:wait`);
+        return { status: "idle", pane: "w9:p1", sessionPath: "/remote/s.jsonl" };
+      },
+      readFile: async (p) => {
+        seen.push(`${tag}:read ${p}`);
+        return JSON.stringify({ type: "assistant", message: { id: "m1", role: "assistant", content: [{ type: "text", text: "hi from box" }] } });
+      },
+      paneClose: async () => {
+        seen.push(`${tag}:close`);
+      },
+    });
     const prev = process.env.HERDR_PANE_ID;
     process.env.HERDR_PANE_ID = "w1:p1";
-    const m = new Manager(piStub(), { ...DEFAULTS, splitCap: 1 }, fake);
-    if (prev === undefined) delete process.env.HERDR_PANE_ID;
-    else process.env.HERDR_PANE_ID = prev;
-    const a = await m.spawn(base);
-    expect(m.children.get(a.id)?.placement).toBe("split");
-    const b = await m.spawn(base);
-    expect(m.children.get(b.id)?.placement).toBe("tab");
-    const c = await m.spawn({ ...base, placement: "split" });
-    expect(m.children.get(c.id)?.placement).toBe("split");
-    await m.spawn({ ...base, placement: "tab" });
-    expect(calls).toEqual(["split w1:p1 down", "tab w9", "split w1:p2 down", "tab w9"]);
+    const m = new Manager(piStub(), { ...DEFAULTS }, tagged("local"));
+    try {
+      const r = await m.spawn({ ...base, machine: "box", harness: "claude" });
+      expect(r.text).toContain("hi from box");
+      expect(r.text).toContain("| box |");
+      expect(m.children.get(r.id)?.machine).toEqual(box);
+      await m.kill(r.id);
+      await m.spawn({ ...base, harness: "claude" });
+    } finally {
+      if (prev === undefined) delete process.env.HERDR_PANE_ID;
+      else process.env.HERDR_PANE_ID = prev;
+    }
+    expect(seen).toEqual([
+      "box:tab parent=",
+      "box:stage /tmp/pi-herdr-subagents-X",
+      "box:start mcp=false",
+      "box:wait",
+      "box:read /remote/s.jsonl",
+      "box:close",
+      "local:tab parent=w1:p1",
+      "local:stage same",
+      "local:start mcp=true",
+      "local:wait",
+      "local:read /remote/s.jsonl",
+    ]);
+  });
+
+  it("rejects an unknown machine before creating anything", async () => {
+    let tabs = 0;
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      machineList: async () => [box],
+      tabCreate: async () => {
+        tabs++;
+        return { pane: "w9:p1", cwd: "/" };
+      },
+    };
+    const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+    await expect(m.spawn({ ...base, machine: "nope" })).rejects.toThrow("unknown machine nope. Saved machines: box");
+    expect(tabs).toBe(0);
+  });
+
+  it("closes the tab and fails when herdr fell back to another cwd", async () => {
+    const closed: string[] = [];
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      tabCreate: async () => ({ pane: "w9:p1", cwd: "/home/me" }),
+      paneClose: async (p) => {
+        closed.push(p);
+      },
+    };
+    const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+    await expect(m.spawn({ ...base, cwd: "/missing/" })).rejects.toThrow("cwd /missing/ does not exist on this machine");
+    expect(closed).toEqual(["w9:p1"]);
+  });
+
+  it("a machine child that loses its wait goes idle, a local one is killed", async () => {
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      machineList: async () => [box],
+      agentPromptWait: async () => {
+        throw new HerdrError("bridge gone", "ssh_failed");
+      },
+      agentGet: async () => {
+        throw new HerdrError("unreachable");
+      },
+    };
+    const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+    m.stallGraceMs = 100;
+    await expect(m.spawn({ ...base, machine: "box" })).rejects.toThrow("bridge gone");
+    await expect(m.spawn(base)).rejects.toThrow("bridge gone");
+    expect(m.list().map((c) => c.status)).toEqual(["idle", "killed"]);
   });
 
   it("keeps the pane after a turn, SendMessage resumes it and delivers the report", async () => {
@@ -626,6 +667,6 @@ describe("placement and idle children", () => {
     expect(m.children.get(a.id)?.status).toBe("idle");
     expect(sent).toHaveLength(1);
     await m.kill(a.id);
-    expect(closed).toEqual(["w1:p8"]);
+    expect(closed).toEqual(["w1:p9"]);
   });
 });

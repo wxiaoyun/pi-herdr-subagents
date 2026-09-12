@@ -1,9 +1,10 @@
 /**
- * pi host: registers the shared tools with pi, delivers reports through pi's
- * message queue and flips herdr's blocked state through pi's event bus.
+ * pi parent harness: registers the shared tools with pi, delivers reports
+ * through pi's message queue and flips herdr's blocked state through pi's
+ * event bus.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createTools, type Host, log } from "@herdr-subagents/core";
+import { createTools, log, type ParentHarness } from "@herdr-subagents/core";
 
 export default function (pi: ExtensionAPI) {
   if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) {
@@ -15,7 +16,7 @@ export default function (pi: ExtensionAPI) {
   let model: string | undefined;
   let awaitingParent = false;
 
-  const host: Host = {
+  const host: ParentHarness = {
     harness: "pi",
     model: () => model,
     thinking: () => pi.getThinkingLevel(),
@@ -92,7 +93,7 @@ export default function (pi: ExtensionAPI) {
       }
       const labels = kids.map(
         (c) =>
-          `${c.id}  ${c.status.padEnd(8)} ${c.profile.padEnd(16)} ${c.harness.padEnd(6)} ${c.pane ?? "-"}  ${c.description}`,
+          `${c.id}  ${c.status.padEnd(8)} ${c.profile.padEnd(16)} ${c.harness.padEnd(6)} ${(c.machine?.label ?? "local").padEnd(12)} ${c.pane ?? "-"}  ${c.description}`,
       );
       const pick = await ctx.ui.select("Subagents", labels);
       if (!pick) return;
