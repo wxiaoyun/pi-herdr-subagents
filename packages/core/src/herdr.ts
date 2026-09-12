@@ -8,7 +8,7 @@
  * bridge. The one thing herdr cannot forward is a file read, so the session
  * file of a Machine child is fetched with `ssh <target> cat`.
  */
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "./paths.ts";
@@ -162,6 +162,21 @@ export function bind(machine?: Machine) {
         label: x.label,
         target: x.target,
       }));
+    },
+    /** Saved machine labels, read once at startup for the tool description. Local, no ssh. */
+    machineLabels(): string[] {
+      try {
+        const out = execFileSync("herdr", ["machine", "list", "--json"], {
+          timeout: 5000,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+        const r = JSON.parse(out);
+        return (Array.isArray(r) ? r : []).map((x: any) => x.label).filter(Boolean);
+      } catch (e) {
+        log("machine_labels", { error: String(e) });
+        return [];
+      }
     },
     /** Session file contents, local or over ssh. */
     async readFile(path: string): Promise<string> {

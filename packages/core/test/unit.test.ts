@@ -9,11 +9,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Herdr, HerdrError, LOG_ENV, log } from "../src/herdr.ts";
-import { childWorkspaceLabel, Manager, type SpawnOpts } from "../src/manager.ts";
+import { childWorkspaceLabel, Manager, type SpawnOpts, sameDir } from "../src/manager.ts";
 import type { ParentHarness } from "../src/parent-harness.ts";
 import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.ts";
 import { readReport } from "../src/session.ts";
 import { DEFAULTS, loadSettings } from "../src/settings.ts";
+import { createTools, machineCwd } from "../src/tools.ts";
 
 /** Minimal parent harness stub so background watchers can deliver without throwing. */
 const piStub = (): ParentHarness => ({
@@ -31,6 +32,7 @@ const emptyHerdr = (): Herdr => ({
     return this;
   },
   machineList: async () => [],
+  machineLabels: () => [],
   readFile: async (p) => readFileSync(p, "utf8"),
   stage: async () => {},
   unstage: async () => {},
@@ -435,6 +437,7 @@ describe("manager queue", () => {
     return this;
   },
   machineList: async () => [],
+  machineLabels: () => [],
   readFile: async (p) => readFileSync(p, "utf8"),
   stage: async () => {},
   unstage: async () => {},
@@ -608,6 +611,22 @@ describe("machines and idle children", () => {
     const m = new Manager(piStub(), { ...DEFAULTS }, fake);
     await expect(m.spawn({ ...base, machine: "nope" })).rejects.toThrow("unknown machine nope. Saved machines: box");
     expect(tabs).toBe(0);
+  });
+
+  it("maps the parent cwd under home to a remote-home-relative one", () => {
+    expect(machineCwd("/Users/me/code/x", "/Users/me")).toBe("code/x");
+    expect(machineCwd("/Users/me", "/Users/me")).toBe("~");
+    expect(machineCwd("/opt/x", "/Users/me")).toBe("/opt/x");
+    expect(sameDir("/home/you/code/x", "code/x")).toBe(true);
+    expect(sameDir("/home/you", "code/x")).toBe(false);
+    expect(sameDir("/home/you", "~")).toBe(true);
+    expect(sameDir("/opt/x/", "/opt/x")).toBe(true);
+  });
+
+  it("lists saved machines in the Agent description, none when there are none", () => {
+    const withBox = createTools(piStub(), () => "/", { ...emptyHerdr(), machineLabels: () => ["box", "devbox"] });
+    expect(withBox.agent.description).toContain("Saved machines: box, devbox.");
+    expect(createTools(piStub(), () => "/", emptyHerdr()).agent.description).not.toContain("Saved machines");
   });
 
   it("closes the tab and fails when herdr fell back to another cwd", async () => {

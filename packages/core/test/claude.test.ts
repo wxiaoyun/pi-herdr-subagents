@@ -18,6 +18,7 @@ const emptyHerdr = (): Herdr => ({
     return this;
   },
   machineList: async () => [],
+  machineLabels: () => [],
   readFile: async (p) => readFileSync(p, "utf8"),
   stage: async () => {},
   unstage: async () => {},

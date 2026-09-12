@@ -62,7 +62,9 @@ In pi, `/agents` lists live children, focus or kill one.
 
 - herdr newer than 0.9.0 on both sides (the `--machine` CLI prefix), a running herdr server on the machine, and `ssh <target>` working non-interactively. herdr's own errors say which one is missing.
 - The child harness (pi or Claude Code) installed and authenticated on the machine.
-- `cwd` (default: the parent's) exists on the machine. herdr silently falls back to `$HOME` otherwise, so the spawn checks the pane's cwd and fails instead.
+- `cwd` exists on the machine. The default is the parent's cwd relative to the local home, which lands at the same place under the remote home, so `/Users/me/code/x` becomes `~/code/x` over there. A parent cwd outside the home is kept as is. herdr silently falls back to `$HOME` for a missing directory, so the spawn checks the pane's cwd and fails instead.
+
+The saved machine labels are listed in the `Agent` description, read once when the parent harness starts. A machine added later still works by name, it is just not listed until restart.
 
 The child's tab lands in the same `<label>-agents` workspace on the machine. Its report is read from its session file over `ssh <target> cat`. A machine child gets no `HERDR_SUBAGENT_PARENT` and no MCP config, so it cannot spawn or message back; the parent still reaches it with `SendMessage`, `resume` and `KillAgent`. If the SSH bridge drops mid-turn the child goes `idle` with the error as its report; `resume` reattaches, or relaunches it from its session if it is gone. Nothing syncs files or branches between machines.
 

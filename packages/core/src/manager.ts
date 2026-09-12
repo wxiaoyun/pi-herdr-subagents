@@ -43,6 +43,8 @@ export interface Child {
   harness: Harness;
   /** Absent: the parent's own machine. */
   machine?: Machine;
+  /** Absolute cwd as herdr reported it for the child's tab. */
+  cwd?: string;
   model?: string;
   description: string;
   pane?: string;
@@ -98,6 +100,19 @@ const slug = (s: string): string =>
     .replace(/^-+|-+$/g, "") || "agent";
 
 const stripSlash = (p: string): string => p.replace(/\/+$/, "") || "/";
+
+/**
+ * Did herdr honour the requested cwd? `~` is the home herdr falls back to
+ * anyway. A relative cwd resolves against the home of the child's machine.
+ */
+// ponytail: a relative cwd equal to the home's own basename would pass when
+// missing; resolve the remote home first if that ever matters.
+export const sameDir = (got: string, asked: string): boolean => {
+  const a = stripSlash(asked);
+  if (a === "~") return true;
+  const g = stripSlash(got);
+  return a.startsWith("/") ? g === a : g.endsWith(`/${a}`);
+};
 
 export class Manager {
   readonly children = new Map<string, Child>();
@@ -198,7 +213,7 @@ export class Manager {
       [ENV_PROFILE]: o.profile.name,
       [ENV_HARNESS]: o.harness,
     };
-    child.pane = await this.place(child, o.cwd, env);
+    [child.pane, child.cwd] = await this.place(child, o.cwd, env);
     // herdr cannot pass args containing newlines; stage multi-line profile
     // prompts in a temp file (pi reads the path at startup) and clean up after
     // the child is interactive.
@@ -247,7 +262,7 @@ export class Manager {
     child.sessionId = info?.sessionId;
     child.sessionPath =
       info?.sessionPath ??
-      sessionPathFor(o.harness, o.cwd, info?.sessionId, !!child.machine);
+      sessionPathFor(o.harness, child.cwd ?? o.cwd, info?.sessionId, !!child.machine);
     child.status = "running";
     log("launched", {
       id: child.id,
@@ -309,13 +324,13 @@ export class Manager {
     child: Child,
     cwd: string,
     env: Record<string, string>,
-  ): Promise<string> {
+  ): Promise<[string, string]> {
     const h = this.hFor(child);
     const ws = await this.childWorkspace(child, cwd);
     const made = await h.tabCreate(child.id, cwd, env, ws);
     // ponytail: exact string compare; a symlinked cwd (macOS /tmp) would trip
     // it, resolve both sides if that bites.
-    if (stripSlash(made.cwd) !== stripSlash(cwd)) {
+    if (!sameDir(made.cwd, cwd)) {
       child.pane = made.pane;
       await this.closePane(child);
       child.pane = undefined;
@@ -323,7 +338,7 @@ export class Manager {
         `cwd ${cwd} does not exist on ${child.machine?.label ?? "this machine"} (herdr fell back to ${made.cwd})`,
       );
     }
-    return made.pane;
+    return [made.pane, made.cwd];
   }
 
   private childWs = new Map<string, string>();

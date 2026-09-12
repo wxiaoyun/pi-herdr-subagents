@@ -2,8 +2,11 @@
  * tools.ts: the five tools, harness-neutral. Each parent harness wraps them in its own
  * registration API (pi registerTool, MCP tools/list + tools/call).
  */
+
+import { homedir } from "node:os";
+import { relative } from "node:path";
 import { type Static, type TSchema, Type } from "typebox";
-import { type Herdr, log } from "./herdr.ts";
+import { h as defaultHerdr, type Herdr, log } from "./herdr.ts";
 import {
   ENV_DEPTH,
   ENV_ID,
@@ -26,6 +29,17 @@ export interface ToolDef<S extends TSchema = TSchema> {
   description: string;
   parameters: S;
   execute(params: Static<S>, signal?: AbortSignal): Promise<ToolResult>;
+}
+
+/**
+ * Default cwd for a Machine child: the parent's cwd relative to the local
+ * home, which herdr resolves against the remote home. Mirrored checkouts
+ * line up without config. Outside the home the path is kept as is.
+ */
+export function machineCwd(dir: string, home = homedir()): string {
+  const rel = relative(home, dir);
+  if (rel === "") return "~";
+  return rel.startsWith("..") || rel.startsWith("/") ? dir : rel;
 }
 
 const ok = (text: string, details?: Record<string, unknown>): ToolResult => ({
@@ -61,7 +75,7 @@ const AgentParams = Type.Object({
   cwd: Type.Optional(
     Type.String({
       description:
-        "Working directory. Default parent cwd. Must exist on the machine the child runs on.",
+        "Working directory. Default: the parent cwd; on a machine, the same path relative to the remote home. Must exist on the machine the child runs on.",
     }),
   ),
   machine: Type.Optional(
@@ -137,6 +151,9 @@ export function createTools(
   const depth = Number(process.env[ENV_DEPTH] ?? 0);
   const myProfile = process.env[ENV_PROFILE];
   const myId = process.env[ENV_ID];
+  // Read once: a harness reads tool descriptions at startup only. Spawn
+  // still checks the live list, so a stale entry only costs an error.
+  const machines = (herdr ?? defaultHerdr).machineLabels();
   let manager: Manager | undefined;
   const getManager = () => {
     manager ??= new Manager(pHarness, loadSettings(cwd()), herdr);
@@ -145,8 +162,7 @@ export function createTools(
 
   const agent: ToolDef<typeof AgentParams> = {
     name: "Agent",
-    description:
-      "Spawn a child coding agent (pi or Claude Code) in its own herdr tab, on this machine or on a saved herdr machine. By default blocks until the child's turn ends and returns its report; run_in_background returns at once and the report arrives later as a message. The child stays alive and idle afterwards: continue it with SendMessage (background) or `resume` (same wait semantics as a spawn), close it with KillAgent.",
+    description: `Spawn a child coding agent (pi or Claude Code) in its own herdr tab, on this machine or on a saved herdr machine. By default blocks until the child's turn ends and returns its report; run_in_background returns at once and the report arrives later as a message. The child stays alive and idle afterwards: continue it with SendMessage (background) or \`resume\` (same wait semantics as a spawn), close it with KillAgent.${machines.length ? ` Saved machines: ${machines.join(", ")}.` : ""}`,
     parameters: AgentParams,
     async execute(p, signal) {
       const dir = cwd();
@@ -181,7 +197,7 @@ export function createTools(
               settings.defaultModel ??
               (harness === pHarness.harness ? pHarness.model?.() : undefined),
             thinking: p.thinking ?? profile.thinking ?? pHarness.thinking?.(),
-            cwd: p.cwd ?? dir,
+            cwd: p.cwd ?? (p.machine ? machineCwd(dir) : dir),
             machine: p.machine,
             background: p.run_in_background ?? false,
             name: p.name,
