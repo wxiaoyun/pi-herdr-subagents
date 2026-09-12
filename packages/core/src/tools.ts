@@ -1,5 +1,5 @@
 /**
- * tools.ts: the four tools, harness-neutral. Each host wraps them in its own
+ * tools.ts: the five tools, harness-neutral. Each host wraps them in its own
  * registration API (pi registerTool, MCP tools/list + tools/call).
  */
 import { type Static, type TSchema, Type } from "typebox";
@@ -61,7 +61,21 @@ const AgentParams = Type.Object({
   cwd: Type.Optional(
     Type.String({ description: "Working directory. Default parent cwd." }),
   ),
-  run_in_background: Type.Optional(Type.Boolean({ description: "Default false." })),
+  run_in_background: Type.Optional(
+    Type.Boolean({
+      description:
+        "false (default): block until the child's turn ends and return its report. true: return at once, the report arrives later as a message.",
+    }),
+  ),
+  placement: Type.Optional(
+    Type.Union(
+      [Type.Literal("auto"), Type.Literal("split"), Type.Literal("tab")],
+      {
+        description:
+          "Where the child's pane goes. auto (default): split beside the parent until splitCap panes, then a tab in the child workspace. split / tab force one.",
+      },
+    ),
+  ),
   name: Type.Optional(
     Type.String({ description: "Short handle used in the agent id." }),
   ),
@@ -101,11 +115,14 @@ const SendParams = Type.Object({
 
 const KillParams = Type.Object({ agent_id: Type.String() });
 
+const ListParams = Type.Object({});
+
 export interface ToolSet {
   agent: ToolDef<typeof AgentParams>;
   result: ToolDef<typeof ResultParams>;
   send: ToolDef<typeof SendParams>;
   kill: ToolDef<typeof KillParams>;
+  list: ToolDef<typeof ListParams>;
   all: ToolDef[];
   manager(): Manager;
 }
@@ -129,7 +146,7 @@ export function createTools(
   const agent: ToolDef<typeof AgentParams> = {
     name: "Agent",
     description:
-      "Spawn a child coding agent (pi or Claude Code) in a herdr pane. Foreground (default) splits the current pane and blocks until the child finishes, returning its final message. Background opens a new tab and returns immediately, the report arrives later as a message. Use `resume` to send a follow-up prompt to an existing child.",
+      "Spawn a child coding agent (pi or Claude Code) in a herdr pane. By default blocks until the child's turn ends and returns its report; run_in_background returns at once and the report arrives later as a message. The child stays alive and idle afterwards: continue it with SendMessage (background) or `resume` (same wait semantics as a spawn), close it with KillAgent. placement picks split beside you or a tab in the child workspace.",
     parameters: AgentParams,
     async execute(p, signal) {
       const dir = cwd();
@@ -166,6 +183,7 @@ export function createTools(
             thinking: p.thinking ?? profile.thinking ?? host.thinking?.(),
             cwd: p.cwd ?? dir,
             background: p.run_in_background ?? false,
+            placement: p.placement,
             name: p.name,
             resume: p.resume,
             timeoutMs: p.timeout_ms ?? settings.defaultTimeoutMs,
@@ -181,7 +199,7 @@ export function createTools(
   };
 
   const result: ToolDef<typeof ResultParams> = {
-    name: "get_subagent_result",
+    name: "GetAgentResult",
     description:
       "Status and output of a child agent. With wait=true blocks until it finishes or blocks on a question.",
     parameters: ResultParams,
@@ -203,9 +221,9 @@ export function createTools(
   };
 
   const send: ToolDef<typeof SendParams> = {
-    name: "send_message",
+    name: "SendMessage",
     description:
-      "Send text to another agent (pi or Claude Code). Omit `to` to reach the parent (child agents only). kind=message queues a prompt (steers if the target is busy), kind=interrupt presses esc first, kind=keys sends raw keys like `enter` or `ctrl+c`. Set expect_reply=true when you need an answer before continuing: end your turn after calling it, the reply arrives as your next message.",
+      "Send text to another agent (pi or Claude Code). To an idle child this starts a new turn and its report arrives later as a message. Omit `to` to reach the parent (child agents only). kind=message queues a prompt (steers if the target is busy), kind=interrupt presses esc first, kind=keys sends raw keys like `enter` or `ctrl+c`. Set expect_reply=true when you need an answer before continuing: end your turn after calling it, the reply arrives as your next message.",
     parameters: SendParams,
     async execute(p) {
       const to = p.to ?? parentPane;
@@ -214,7 +232,7 @@ export function createTools(
       try {
         await getManager().send(to, prefix + p.message, p.kind ?? "message");
       } catch (e) {
-        return err(`send_message failed: ${String(e)}`);
+        return err(`SendMessage failed: ${String(e)}`);
       }
       if (p.expect_reply && parentPane && !p.to) {
         host.setBlocked(true, "awaiting parent");
@@ -225,7 +243,7 @@ export function createTools(
   };
 
   const kill: ToolDef<typeof KillParams> = {
-    name: "kill_subagent",
+    name: "KillAgent",
     description: "Close a child agent's pane. Irreversible.",
     parameters: KillParams,
     async execute(p) {
@@ -238,6 +256,29 @@ export function createTools(
     },
   };
 
+  const list: ToolDef<typeof ListParams> = {
+    name: "ListAgents",
+    description: "Children of this session: id, profile, harness, status, one per line.",
+    parameters: ListParams,
+    async execute() {
+      const kids = getManager().list();
+      if (!kids.length) return ok("no children");
+      return ok(
+        kids
+          .map((c) => `${c.id}  ${c.status}  ${c.profile}  ${c.harness}  ${c.description}`)
+          .join("\n"),
+      );
+    },
+  };
+
   log("tools_created", { harness: host.harness, depth, profile: myProfile });
-  return { agent, result, send, kill, all: [agent, result, send, kill], manager: getManager };
+  return {
+    agent,
+    result,
+    send,
+    kill,
+    list,
+    all: [agent, result, send, kill, list],
+    manager: getManager,
+  };
 }

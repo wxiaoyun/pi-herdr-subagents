@@ -83,6 +83,6 @@ describe("mcp server", () => {
     p.kill();
     const lines = out.trim().split("\n").map((l) => JSON.parse(l));
     expect(lines[0].result.serverInfo.name).toBe("herdr");
-    expect(lines[1].result.tools.map((t: any) => t.name)).toEqual(["Agent", "get_subagent_result", "send_message", "kill_subagent"]);
+    expect(lines[1].result.tools.map((t: any) => t.name)).toEqual(["Agent", "GetAgentResult", "SendMessage", "KillAgent", "ListAgents"]);
   });
 });

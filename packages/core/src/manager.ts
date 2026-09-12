@@ -15,6 +15,7 @@ import {
   log,
 } from "./herdr.ts";
 import type { Harness, Host } from "./host.ts";
+import { balanceOps, childWorkspaceLabel, pickSplit } from "./layout.ts";
 import type { Profile } from "./profiles.ts";
 import {
   formatUsage,
@@ -26,7 +27,16 @@ import {
 import type { Settings } from "./settings.ts";
 
 export type ChildStatus =
-  "queued" | "starting" | "running" | "blocked" | "done" | "timeout" | "killed";
+  | "queued"
+  | "starting"
+  | "running"
+  | "blocked"
+  | "idle"
+  | "done"
+  | "timeout"
+  | "killed";
+
+export type Placement = "auto" | "split" | "tab";
 
 export interface Child {
   id: string;
@@ -35,6 +45,7 @@ export interface Child {
   model?: string;
   description: string;
   pane?: string;
+  placement?: "split" | "tab";
   background: boolean;
   status: ChildStatus;
   sessionPath?: string;
@@ -54,6 +65,8 @@ export interface SpawnOpts {
   thinking?: string;
   cwd: string;
   background: boolean;
+  /** Where the pane goes. auto: split until splitCap, then tab. */
+  placement?: Placement;
   name?: string;
   timeoutMs: number;
   depth: number;
@@ -161,9 +174,7 @@ export class Manager {
       [ENV_PROFILE]: o.profile.name,
       [ENV_HARNESS]: o.harness,
     };
-    child.pane = o.background
-      ? await this.h.tabCreate(child.id, o.cwd, env)
-      : await this.h.splitCurrent(this.settings.splitRatio, o.cwd, env);
+    [child.pane, child.placement] = await this.place(child, o, env);
     // herdr cannot pass args containing newlines; stage multi-line profile
     // prompts in a temp file (pi reads the path at startup) and clean up after
     // the child is interactive.
@@ -188,7 +199,7 @@ export class Manager {
       );
     } catch (e) {
       log("agent_start_failed", { id: child.id, error: String(e) });
-      await this.h.paneClose(child.pane).catch(() => {});
+      await this.closePane(child);
       throw e;
     } finally {
       rmSync(staged, { recursive: true, force: true });
@@ -203,6 +214,66 @@ export class Manager {
       pane: child.pane,
       session: child.sessionPath,
     });
+  }
+
+  // ---- placement ------------------------------------------------------------
+
+  private parentPane = process.env.HERDR_PANE_ID ?? "";
+
+  private async place(
+    child: Child,
+    o: SpawnOpts,
+    env: Record<string, string>,
+  ): Promise<[string, "split" | "tab"]> {
+    const placement = o.placement ?? "auto";
+    let layout = placement === "tab" ? undefined : await this.h.paneLayout(this.parentPane);
+    if (layout && placement === "auto" && layout.panes.length - 1 >= this.settings.splitCap) {
+      log("split_cap", { cap: this.settings.splitCap, panes: layout.panes.length });
+      layout = undefined;
+    }
+    if (!layout) {
+      const ws = await this.childWorkspace(o.cwd);
+      return [await this.h.tabCreate(child.id, o.cwd, env, ws), "tab"];
+    }
+    const target = pickSplit(layout, this.parentPane);
+    const pane = await this.h.paneSplit(target.pane, target.direction, o.cwd, env);
+    await this.rebalance();
+    return [pane, "split"];
+  }
+
+  private childWs?: string;
+
+  /**
+   * herdr relabels an unlabelled workspace after the focused pane's cwd, so
+   * the derived label can drift mid-session. Resolve once per parent process.
+   */
+  private async childWorkspace(cwd: string): Promise<string | undefined> {
+    const mine = process.env.HERDR_WORKSPACE_ID;
+    if (!mine) return undefined;
+    if (!this.childWs) {
+      const label = childWorkspaceLabel(await this.h.workspaceLabel(mine));
+      this.childWs = await this.h.workspaceByLabel(label, cwd);
+      log("child_workspace", { label, id: this.childWs });
+    }
+    return this.childWs;
+  }
+
+  /** Equal share for every pane in the parent's tab. Best effort. */
+  private async rebalance(): Promise<void> {
+    try {
+      for (const op of balanceOps(await this.h.paneLayout(this.parentPane)))
+        await this.h.paneResize(op);
+    } catch (e) {
+      log("rebalance", { error: String(e) });
+    }
+  }
+
+  private async closePane(child: Child): Promise<void> {
+    if (!child.pane) return;
+    await this.h
+      .paneClose(child.pane)
+      .catch((e) => log("pane_close", { id: child.id, error: String(e) }));
+    if (child.placement === "split") await this.rebalance();
   }
 
   async spawn(o: SpawnOpts, signal?: AbortSignal): Promise<SpawnResult> {
@@ -283,6 +354,9 @@ export class Manager {
         this.fail(child, e);
         throw e;
       });
+    } else if (child.released) {
+      await this.acquire(signal);
+      child.released = false;
     }
     child.status = "running";
     if (o.background) {
@@ -416,14 +490,10 @@ export class Manager {
       return;
     }
     child.report = await this.collect(child);
-    child.status = "done";
+    child.status = this.settings.closeOnDone ? "done" : "idle";
     log("child_done", { id: child.id, usage: formatUsage(child.report.usage) });
     this.release(child);
-    if (this.settings.closeOnDone && child.pane) {
-      await this.h
-        .paneClose(child.pane)
-        .catch((e) => log("pane_close", { id: child.id, error: String(e) }));
-    }
+    if (this.settings.closeOnDone) await this.closePane(child);
   }
 
   private async timeout(child: Child): Promise<void> {
@@ -460,8 +530,10 @@ export class Manager {
     const body = r?.text || "(no output)";
     const tail =
       child.status === "blocked"
-        ? `\n(${child.id} is waiting for a reply via send_message)`
-        : "";
+        ? `\n(${child.id} is waiting for a reply via SendMessage)`
+        : child.status === "idle"
+          ? `\n(${child.id} is idle: SendMessage to it or Agent resume to continue, KillAgent to close)`
+          : "";
     return `${head}\n${body}${tail}`;
   }
 
@@ -489,7 +561,7 @@ export class Manager {
       child.watcher = undefined;
       return (await this.foreground(child, undefined, timeoutMs, signal)).text;
     }
-    if (child.status === "done" || child.status === "killed")
+    if (["idle", "done", "killed"].includes(child.status))
       return this.formatReport(child);
     const recent = await this.h.agentRead(id, 40).catch(() => "");
     return `[subagent ${id} | ${child.profile} | ${child.model ?? "default model"} | ${child.status} | pane ${child.pane}]\n${recent.trim()}`;
@@ -507,6 +579,16 @@ export class Manager {
     if (kind === "interrupt") {
       await this.h.sendKeys(to, ["esc"]);
       await new Promise((r) => setTimeout(r, 300));
+    }
+    const idle = this.children.get(to);
+    if (idle?.status === "idle") {
+      // Resume: a new background turn, the report is delivered when it ends.
+      idle.status = "running";
+      idle.background = true;
+      idle.released = false;
+      await this.acquire();
+      this.watchPrompt(idle, message, this.settings.defaultTimeoutMs);
+      return;
     }
     try {
       await this.h.agentPrompt(to, message);
@@ -531,10 +613,7 @@ export class Manager {
     const child = this.children.get(id);
     if (!child) throw new Error(`unknown subagent ${id}`);
     child.watcher?.abort();
-    if (child.pane)
-      await this.h
-        .paneClose(child.pane)
-        .catch((e) => log("kill_close", { id, error: String(e) }));
+    await this.closePane(child);
     child.status = "killed";
     this.release(child);
   }

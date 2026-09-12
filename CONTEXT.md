@@ -31,7 +31,25 @@ _Avoid_: result, output, summary
 herdr state meaning the child is waiting on input from a person or its parent. Reached by a permission prompt or by `expect_reply`.
 
 **Foreground / Background**:
-Foreground: child shares the parent's tab and the parent waits. Background: child gets its own tab and the parent continues.
+Whether the parent waits. Foreground: the parent waits for the Report. Background: the parent continues and the Report is delivered later. Says nothing about where the child's pane is.
+_Avoid_: split, tab (those are Placement)
+
+**Placement**:
+Where a child's pane lives. Split: beside the parent in the parent's tab. Tab: its own tab in the Child workspace. Independent of Foreground / Background.
+
+**Split cap**:
+The most child panes allowed beside a parent in one tab. Idle children count. Past the cap, new children get Tab placement.
+
+**Child workspace**:
+The herdr workspace holding Tab-placed children. Derived from the parent's workspace by a fixed rule, and a Child workspace maps to itself, so grandchildren land in the same one.
+
+**Idle**:
+A child whose turn finished and whose pane stays open. Delivered its Report, holds no concurrency slot, and can be Resumed. The default end state of a turn.
+_Avoid_: done, finished, alive
+
+**Resume**:
+Giving an Idle child a new prompt. Starts a new turn that ends in a Report. If the pane is gone, the child is relaunched from its session first.
+_Avoid_: reuse, continue, follow-up
 
 **Detached**:
 A foreground child the parent stopped waiting on. It continues as a background child.

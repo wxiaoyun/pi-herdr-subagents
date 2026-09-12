@@ -6,6 +6,7 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { Layout, ResizeOp } from "./layout.ts";
 import { getAgentDir } from "./paths.ts";
 
 export const LOG_ENV = "HERDR_SUBAGENTS_LOG";
@@ -139,19 +140,19 @@ const toAgentInfo = (a: any): AgentInfo => ({
 
 /** Named helpers used by the manager. Injectable for tests. */
 export const h = {
-  async splitCurrent(
-    ratio: number,
+  async paneSplit(
+    pane: string,
+    direction: "right" | "down",
     cwd: string,
     env: Record<string, string>,
   ): Promise<string> {
     const r = await herdr([
       "pane",
       "split",
-      "--current",
+      "--pane",
+      pane,
       "--direction",
-      "right",
-      "--ratio",
-      String(ratio),
+      direction,
       "--no-focus",
       "--cwd",
       cwd,
@@ -159,10 +160,27 @@ export const h = {
     ]);
     return r.pane.pane_id;
   },
+  async paneLayout(pane: string): Promise<Layout> {
+    const r = await herdr(["pane", "layout", "--pane", pane]);
+    return r.layout;
+  },
+  async paneResize(op: ResizeOp): Promise<void> {
+    await herdr([
+      "pane",
+      "resize",
+      "--pane",
+      op.pane,
+      "--direction",
+      op.direction,
+      "--amount",
+      String(op.amount),
+    ]);
+  },
   async tabCreate(
     label: string,
     cwd: string,
     env: Record<string, string>,
+    workspace?: string,
   ): Promise<string> {
     const r = await herdr([
       "tab",
@@ -172,9 +190,30 @@ export const h = {
       label,
       "--cwd",
       cwd,
+      ...(workspace ? ["--workspace", workspace] : []),
       ...envArgs(env),
     ]);
     return r.root_pane.pane_id;
+  },
+  async workspaceLabel(id: string): Promise<string> {
+    const r = await herdr(["workspace", "get", id]);
+    return r.workspace.label;
+  },
+  /** Workspace id for `label`, first match, created when missing. */
+  async workspaceByLabel(label: string, cwd: string): Promise<string> {
+    const r = await herdr(["workspace", "list"]);
+    const found = (r.workspaces ?? []).find((w: any) => w.label === label);
+    if (found) return found.workspace_id;
+    const c = await herdr([
+      "workspace",
+      "create",
+      "--no-focus",
+      "--label",
+      label,
+      "--cwd",
+      cwd,
+    ]);
+    return c.workspace.workspace_id;
   },
   /** Retries while the freshly created pane's shell is still booting. */
   async agentStart(

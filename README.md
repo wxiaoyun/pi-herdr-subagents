@@ -30,7 +30,7 @@ Claude Code children spawned by either parent get the MCP server injected automa
 
 | Package           | Role                                                                   |
 | ----------------- | ---------------------------------------------------------------------- |
-| `packages/core`   | herdr client, child manager, profiles, settings, the four tools        |
+| `packages/core`   | herdr client, child manager, pane layout, profiles, settings, the five tools |
 | `packages/pi`     | pi extension host                                                      |
 | `packages/claude` | Claude Code host: a stdio MCP server exposing the same tools as `mcp__herdr__*` |
 
@@ -38,10 +38,22 @@ Claude Code children spawned by either parent get the MCP server injected automa
 
 | Tool                  | Purpose                                                                                                                                                                                                                                                                                                                                              |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Agent`               | Spawn a child. `harness: pi \| claude` picks the child harness (default: profile, then the parent's). Foreground splits the current pane and blocks until the child finishes. `run_in_background: true` opens a tab and returns at once, the report arrives later as a message. `resume: <id>` sends another prompt to an existing child, relaunching it from its session if its pane is gone. |
-| `get_subagent_result` | Status plus recent screen, or the final report. `wait: true` blocks.                                                                                                                                                                                                                                                                                 |
-| `send_message`        | Text to any agent of either harness. `to` omitted in a child means the parent. `kind`: `message` (prompt, steers if busy), `interrupt` (esc first), `keys` (raw keys like `enter` or `ctrl+c`). `expect_reply: true` marks the child `blocked` in herdr until the parent replies.                                                                        |
-| `kill_subagent`       | Close the child's pane.                                                                                                                                                                                                                                                                                                                              |
+| `Agent`          | Spawn a child. `harness: pi \| claude` picks the child harness (default: profile, then the parent's). Blocks until the child's turn ends and returns its report. `run_in_background: true` returns at once, the report arrives later as a message. `placement: auto \| split \| tab` picks where the pane goes (see Placement). `resume: <id>` sends another prompt to an existing child, relaunching it from its session if its pane is gone. |
+| `GetAgentResult` | Status plus recent screen, or the final report. `wait: true` blocks.                                                                                                                                                                                                                                                                                 |
+| `SendMessage`    | Text to any agent of either harness. To an idle child this starts a new turn, the report arrives later as a message. `to` omitted in a child means the parent. `kind`: `message` (prompt, steers if busy), `interrupt` (esc first), `keys` (raw keys like `enter` or `ctrl+c`). `expect_reply: true` marks the child `blocked` in herdr until the parent replies. |
+| `KillAgent`      | Close the child's pane.                                                                                                                                                                                                                                                                                                                              |
+| `ListAgents`     | Children of this session with id, status, profile and harness.                                                                                                                                                                                                                                                                                       |
+
+A child's turn ends in status `idle`: its pane stays open and it keeps its context. Continue it with `SendMessage` (background) or `Agent` with `resume` (blocks like a spawn). Close it with `KillAgent` or by ending the parent session. Set `closeOnDone: true` to close panes at the end of every turn instead.
+
+## Placement
+
+Waiting and pane placement are independent. `run_in_background` decides whether the parent waits, `placement` decides where the pane goes:
+
+- `split` (default while under `splitCap`): the biggest pane in the parent's tab is split along its longer axis, then every pane in the tab is resized to an equal share. Panes opened by hand count toward the cap and get resized too.
+- `tab` (default past `splitCap`): a new tab in the child workspace, the workspace labelled `<parent workspace label>-agents`, created on first use. A child workspace maps to itself, so grandchildren land in the same one. The label is read once per parent session, since herdr relabels unlabelled workspaces after the focused pane's directory.
+
+Nothing is focused on spawn.
 
 In pi, `/agents` lists live children, focus or kill one.
 
@@ -87,20 +99,21 @@ Tool names in user profiles are passed to the child harness as written. Model an
 
 ```json
 {
-  "closeOnDone": true,
+  "closeOnDone": false,
   "maxConcurrent": 4,
   "defaultTimeoutMs": 0,
   "notify": "followUp",
   "maxDepth": 2,
   "defaultModel": null,
-  "splitRatio": 0.5,
+  "splitCap": 3,
   "piArgs": [],
   "claudeArgs": []
 }
 ```
 
 - `notify`: `followUp` injects the background report as a user message and triggers a turn, `passive` appends it for the next turn. pi parent only.
-- `maxConcurrent`: further spawns queue FIFO. Foreground spawns block, background ones return `queued`.
+- `maxConcurrent`: further spawns queue FIFO. Foreground spawns block, background ones return `queued`. Idle children hold no slot.
+- `splitCap`: child panes beside the parent before new children go to a tab.
 - Timeout returns the partial report with status `timeout` and leaves the child running.
 - Pressing esc during a foreground spawn detaches it: the child keeps running as background.
 - `piArgs` / `claudeArgs`: extra CLI args for every child of that harness, for example `["--no-skills"]` or `["--allowedTools", "Bash(git *)"]`.
@@ -117,7 +130,7 @@ HERDR_SUBAGENTS_LOG=/tmp/herdr-subagents.log pi
 
 ## How a child asks the parent
 
-Child calls `send_message({ message, expect_reply: true })`, ends its turn. The text lands in the parent as a queued message prefixed `[from <id>]`. The parent's foreground `Agent` call returns with status `blocked`. Parent answers with `send_message({ to: <id>, message })` and resumes waiting with `get_subagent_result({ agent_id, wait: true })`.
+Child calls `SendMessage({ message, expect_reply: true })`, ends its turn. The text lands in the parent as a queued message prefixed `[from <id>]`. The parent's foreground `Agent` call returns with status `blocked`. Parent answers with `SendMessage({ to: <id>, message })` and resumes waiting with `GetAgentResult({ agent_id, wait: true })`.
 
 ## Development
 

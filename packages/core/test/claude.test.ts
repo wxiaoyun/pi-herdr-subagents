@@ -14,7 +14,11 @@ const host = (): Host => ({ harness: "pi", deliver: () => {}, setBlocked: () => 
 
 const emptyHerdr = (): Herdr => ({
   tabCreate: async () => "w1:p9",
-  splitCurrent: async () => "w1:p8",
+  paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
   agentStart: async () => {},
   agentPrompt: async () => {},
   agentPromptWait: async () => ({ status: "done", pane: "w1:p8" }),

@@ -20,7 +20,7 @@ export interface ChildSpec {
   stagedDir?: string;
 }
 
-export const SPAWN_TOOLS = ["Agent", "get_subagent_result", "kill_subagent"];
+export const SPAWN_TOOLS = ["Agent", "GetAgentResult", "KillAgent", "ListAgents"];
 
 /** Claude tool names for the builtin profiles' pi tool names. */
 const CLAUDE_TOOL_ALIASES: Record<string, string> = {
@@ -76,7 +76,7 @@ function piArgs(c: ChildSpec, s: Settings): string[] {
   if (p.tools?.length) {
     args.push(
       "--tools",
-      [...p.tools, "send_message", ...(canSpawn(p) ? SPAWN_TOOLS : [])].join(","),
+      [...p.tools, "SendMessage", ...(canSpawn(p) ? SPAWN_TOOLS : [])].join(","),
     );
   }
   if (c.session) args.push("--session", c.session);

@@ -52,9 +52,10 @@ export default function (pi: ExtensionAPI) {
         "Use Agent with harness claude to run the child in Claude Code instead of pi.",
       ],
     },
-    send_message: {
+    SendMessage: {
       promptGuidelines: [
-        "Use send_message without `to` to ask the parent agent a clarifying question, then end the turn and wait for the reply.",
+        "Use SendMessage without `to` to ask the parent agent a clarifying question, then end the turn and wait for the reply.",
+        "Use SendMessage with `to` set to an idle child's id to give it a follow-up task, its report arrives as a later message.",
       ],
     },
   };

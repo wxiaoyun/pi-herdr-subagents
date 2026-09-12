@@ -10,7 +10,8 @@ export interface Settings {
   notify: "followUp" | "passive";
   maxDepth: number;
   defaultModel: string | null;
-  splitRatio: number;
+  /** Child panes allowed beside the parent before new ones go to a tab. */
+  splitCap: number;
   /** Extra CLI args appended to every child pi. */
   piArgs: string[];
   /** Extra CLI args appended to every child Claude Code. */
@@ -18,13 +19,13 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
-  closeOnDone: true,
+  closeOnDone: false,
   maxConcurrent: 4,
   defaultTimeoutMs: 0,
   notify: "followUp",
   maxDepth: 2,
   defaultModel: null,
-  splitRatio: 0.5,
+  splitCap: 3,
   piArgs: [],
   claudeArgs: [],
 };

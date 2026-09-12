@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Herdr, HerdrError, LOG_ENV, log } from "../src/herdr.ts";
 import type { Host } from "../src/host.ts";
+import { balanceOps, childWorkspaceLabel, pickSplit } from "../src/layout.ts";
 import { Manager, type SpawnOpts } from "../src/manager.ts";
 import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.ts";
 import { readReport } from "../src/session.ts";
@@ -27,7 +28,11 @@ const tmp = () => mkdtempSync(join(tmpdir(), "phs-"));
 /** Herdr stub with every method as a no-op; override per test. */
 const emptyHerdr = (): Herdr => ({
   tabCreate: async () => "w1:p9",
-  splitCurrent: async () => "w1:p8",
+  paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
   agentStart: async () => {},
   agentPrompt: async () => {},
   agentPromptWait: async () => ({ status: "done", pane: "w1:p8" }),
@@ -141,7 +146,7 @@ describe("settings", () => {
     const agentDir = tmp();
     writeFileSync(
       join(agentDir, "herdr-subagents.json"),
-      JSON.stringify({ maxConcurrent: 2, splitRatio: 0.3 }),
+      JSON.stringify({ maxConcurrent: 2, splitCap: 5 }),
     );
     mkdirSync(join(cwd, ".pi"));
     writeFileSync(
@@ -151,7 +156,7 @@ describe("settings", () => {
     expect(loadSettings(cwd, agentDir)).toEqual({
       ...DEFAULTS,
       maxConcurrent: 7,
-      splitRatio: 0.3,
+      splitCap: 5,
       claudeArgs: ["--verbose"],
     });
   });
@@ -164,7 +169,11 @@ describe("profile prompt staging", () => {
     let fileAfterStart: boolean | undefined;
     const fake: Herdr = {
       ...emptyHerdr(),
-      splitCurrent: async () => "w1:p8",
+      paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
       agentStart: async (_id, _pane, _kind, args) => {
         const i = args.indexOf("--append-system-prompt");
         stagedPath = args[i + 1];
@@ -200,7 +209,11 @@ describe("profile prompt staging", () => {
     let args: string[] = [];
     const fake: Herdr = {
       ...emptyHerdr(),
-      splitCurrent: async () => "w1:p8",
+      paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
       agentStart: async (_id, _pane, _kind, a) => {
         args = a;
       },
@@ -259,7 +272,11 @@ describe("prompt-wait stall recovery", () => {
     const closed: string[] = [];
     const fake: Herdr = {
       ...emptyHerdr(),
-      splitCurrent: async () => "w1:p8",
+      paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
       agentStart: async () => {},
       agentPromptWait: async () => {
         throw stallErr();
@@ -273,7 +290,7 @@ describe("prompt-wait stall recovery", () => {
         closed.push(p);
       },
     };
-    const m = new Manager(piStub(), { ...DEFAULTS }, fake);
+    const m = new Manager(piStub(), { ...DEFAULTS, closeOnDone: true }, fake);
     const r = await m.spawn({
       prompt: "go",
       description: "d",
@@ -302,7 +319,11 @@ describe("prompt-wait stall recovery", () => {
     );
     const fake: Herdr = {
       ...emptyHerdr(),
-      splitCurrent: async () => "w1:p8",
+      paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
       agentStart: async () => {},
       agentPromptWait: async () => {
         throw stallErr();
@@ -340,7 +361,11 @@ describe("prompt-wait stall recovery", () => {
     let polls = 0;
     const fake: Herdr = {
       ...emptyHerdr(),
-      splitCurrent: async () => "w1:p8",
+      paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
       agentStart: async () => {},
       agentPromptWait: async () => {
         throw stallErr();
@@ -375,14 +400,18 @@ describe("prompt-wait stall recovery", () => {
       timeoutMs: 0,
       depth: 1,
     });
-    expect(r.status).toBe("done");
+    expect(r.status).toBe("idle");
     expect(r.text).toContain("late answer");
   });
 
   it("fails when the stalled child is not in a terminal state", async () => {
     const fake: Herdr = {
       ...emptyHerdr(),
-      splitCurrent: async () => "w1:p8",
+      paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
       agentStart: async () => {},
       agentPromptWait: async () => {
         throw stallErr();
@@ -417,7 +446,11 @@ describe("manager queue", () => {
     let waiters: Array<(v: any) => void> = [];
     const fake: Herdr = {
       tabCreate: async () => "w1:p9",
-      splitCurrent: async () => "w1:p8",
+      paneSplit: async () => "w1:p8",
+  paneLayout: async () => ({ panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 100, height: 40 } }], splits: [] }),
+  paneResize: async () => {},
+  workspaceLabel: async () => "ws",
+  workspaceByLabel: async () => "w9",
       agentStart: async () => {
         starts++;
       },
@@ -467,10 +500,132 @@ describe("manager queue", () => {
     waiters.shift()!({ status: "idle", pane: "w1:p9" });
     await new Promise((r) => setTimeout(r, 10));
     expect(starts).toBe(2);
-    expect(m.children.get(a.id)?.status).toBe("done");
+    expect(m.children.get(a.id)?.status).toBe("idle");
     expect(sent[0]).toContain(`[subagent ${a.id}`);
     expect(sent[0]).toContain("test/model");
     expect(sent[0]).toContain("screen");
     expect(await m.result(a.id, false, 0)).toContain("test/model");
+  });
+});
+
+describe("layout", () => {
+  const rect = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+  // parent 93x44 | child a 93x22 over child b 93x22 (root split right 0.5, right column split down 0.5)
+  const grid = {
+    panes: [
+      { pane_id: "w1:p1", rect: rect(0, 0, 93, 44) },
+      { pane_id: "w1:p2", rect: rect(93, 0, 93, 22) },
+      { pane_id: "w1:p3", rect: rect(93, 22, 93, 22) },
+    ],
+    splits: [
+      { direction: "right" as const, ratio: 0.5, rect: rect(0, 0, 186, 44) },
+      { direction: "down" as const, ratio: 0.5, rect: rect(93, 0, 93, 44) },
+    ],
+  };
+
+  it("splits the biggest pane along its longer axis, ties go to a child", () => {
+    expect(pickSplit({ panes: [{ pane_id: "w1:p1", rect: rect(0, 0, 186, 44) }], splits: [] }, "w1:p1")).toEqual({ pane: "w1:p1", direction: "right" });
+    const two = {
+      panes: [
+        { pane_id: "w1:p1", rect: rect(0, 0, 93, 44) },
+        { pane_id: "w1:p2", rect: rect(93, 0, 93, 44) },
+      ],
+      splits: [],
+    };
+    expect(pickSplit(two, "w1:p1")).toEqual({ pane: "w1:p2", direction: "down" });
+    expect(pickSplit(grid, "w1:p1")).toEqual({ pane: "w1:p1", direction: "down" });
+  });
+
+  it("resizes each split to leaves-first over leaves-total", () => {
+    // root: 1 leaf left, 2 right, want 1/3: move the parent's right edge left by 0.1667
+    expect(balanceOps(grid)).toEqual([{ pane: "w1:p1", direction: "left", amount: 0.1667 }]);
+    const balanced = { ...grid, splits: [{ ...grid.splits[0], ratio: 1 / 3 }, grid.splits[1]] };
+    expect(balanceOps(balanced)).toEqual([]);
+    const tall = { ...grid, splits: [grid.splits[0], { ...grid.splits[1], ratio: 0.3 }] };
+    expect(balanceOps(tall)[1]).toEqual({ pane: "w1:p2", direction: "down", amount: 0.2 });
+  });
+
+  it("derives an idempotent child workspace label", () => {
+    expect(childWorkspaceLabel("proj")).toBe("proj-agents");
+    expect(childWorkspaceLabel("proj-agents")).toBe("proj-agents");
+  });
+});
+
+describe("placement and idle children", () => {
+  const base: SpawnOpts = {
+    prompt: "go",
+    description: "d",
+    profile: BUILTIN_PROFILES[0],
+    harness: "pi",
+    cwd: "/",
+    background: false,
+    timeoutMs: 0,
+    depth: 1,
+  };
+  const full = () => ({
+    panes: [1, 2, 3, 4].map((n) => ({ pane_id: `w1:p${n}`, rect: { x: 0, y: 0, width: 10, height: 10 } })),
+    splits: [],
+  });
+
+  it("splits under the cap, tabs in the child workspace past it, honours forced placement", async () => {
+    const calls: string[] = [];
+    let panes = 1;
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      paneLayout: async () => ({ ...full(), panes: full().panes.slice(0, panes) }),
+      paneSplit: async (pane, dir) => {
+        calls.push(`split ${pane} ${dir}`);
+        return `w1:p${++panes}`;
+      },
+      paneResize: async (op) => {
+        calls.push(`resize ${op.pane} ${op.direction} ${op.amount}`);
+      },
+      tabCreate: async (_l, _c, _e, ws) => {
+        calls.push(`tab ${ws}`);
+        return "w9:p1";
+      },
+    };
+    const prev = process.env.HERDR_PANE_ID;
+    process.env.HERDR_PANE_ID = "w1:p1";
+    const m = new Manager(piStub(), { ...DEFAULTS, splitCap: 1 }, fake);
+    if (prev === undefined) delete process.env.HERDR_PANE_ID;
+    else process.env.HERDR_PANE_ID = prev;
+    const a = await m.spawn(base);
+    expect(m.children.get(a.id)?.placement).toBe("split");
+    const b = await m.spawn(base);
+    expect(m.children.get(b.id)?.placement).toBe("tab");
+    const c = await m.spawn({ ...base, placement: "split" });
+    expect(m.children.get(c.id)?.placement).toBe("split");
+    await m.spawn({ ...base, placement: "tab" });
+    expect(calls).toEqual(["split w1:p1 down", "tab w9", "split w1:p2 down", "tab w9"]);
+  });
+
+  it("keeps the pane after a turn, SendMessage resumes it and delivers the report", async () => {
+    const closed: string[] = [];
+    const prompts: string[] = [];
+    const sent: string[] = [];
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      paneClose: async (p) => {
+        closed.push(p);
+      },
+      agentPromptWait: async (_id, text) => {
+        prompts.push(text);
+        return { status: "idle", pane: "w1:p8" };
+      },
+    };
+    const m = new Manager({ ...piStub(), deliver: (t) => sent.push(t) }, DEFAULTS, fake);
+    const a = await m.spawn(base);
+    expect(a.status).toBe("idle");
+    expect(a.text).toContain("is idle");
+    expect(closed).toEqual([]);
+    await m.send(a.id, "more", "message");
+    expect(m.children.get(a.id)?.status).toBe("running");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(prompts).toEqual(["go", "more"]);
+    expect(m.children.get(a.id)?.status).toBe("idle");
+    expect(sent).toHaveLength(1);
+    await m.kill(a.id);
+    expect(closed).toEqual(["w1:p8"]);
   });
 });
