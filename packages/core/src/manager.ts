@@ -105,12 +105,12 @@ export class Manager {
   private live = 0;
   private pending: Array<() => void> = [];
 
-  private host: ParentHarness;
+  private pHarness: ParentHarness;
   private settings: Settings;
   private h: Herdr;
 
-  constructor(host: ParentHarness, settings: Settings, h: Herdr = defaultHerdr) {
-    this.host = host;
+  constructor(pHarness: ParentHarness, settings: Settings, h: Herdr = defaultHerdr) {
+    this.pHarness = pHarness;
     this.settings = settings;
     this.h = h;
   }
@@ -172,7 +172,7 @@ export class Manager {
     let id: string;
     do {
       this.counter++;
-      id = `sa-${slug(base)}-${this.counter}`.slice(0, 32);
+      id = `${this.pHarness.harness}-${slug(base)}-${this.counter}`.slice(0, 32);
     } while (this.children.has(id) || live.has(id));
     return id;
   }
@@ -598,7 +598,7 @@ export class Manager {
   }
 
   private deliver(child: Child): void {
-    this.host.deliver(this.formatReport(child), this.settings.notify);
+    this.pHarness.deliver(this.formatReport(child), this.settings.notify);
   }
 
   // ---- inspect / message / kill ---------------------------------------------

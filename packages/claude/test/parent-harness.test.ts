@@ -15,34 +15,34 @@ const herdr = (over: Partial<Herdr>): Herdr =>
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-describe("claude host", () => {
+describe("claude parent harness", () => {
   it("types a report into its own pane", async () => {
     const prompts: string[] = [];
-    const host = createClaudeParent("w1:p1", herdr({ agentPrompt: async (id, t) => { prompts.push(`${id}:${t}`); } }));
-    host.deliver("report text", "passive");
+    const pHarness = createClaudeParent("w1:p1", herdr({ agentPrompt: async (id, t) => { prompts.push(`${id}:${t}`); } }));
+    pHarness.deliver("report text", "passive");
     await tick();
     expect(prompts).toEqual(["w1:p1:report text"]);
   });
 
   it("falls back to pane run when the pane is blocked", async () => {
     const runs: string[] = [];
-    const host = createClaudeParent(
+    const pHarness = createClaudeParent(
       "w1:p1",
       herdr({
         agentPrompt: async () => { throw new HerdrError("blocked", "agent_blocked"); },
         paneRun: async (_p, t) => { runs.push(t); },
       }),
     );
-    host.deliver("hi", "followUp");
+    pHarness.deliver("hi", "followUp");
     await tick();
     expect(runs).toEqual(["hi"]);
   });
 
   it("reports blocked and working to herdr", async () => {
     const states: string[] = [];
-    const host = createClaudeParent("w1:p1", herdr({ paneReportAgent: async (_p, s) => { states.push(s); } }));
-    host.setBlocked(true, "awaiting parent");
-    host.setBlocked(false);
+    const pHarness = createClaudeParent("w1:p1", herdr({ paneReportAgent: async (_p, s) => { states.push(s); } }));
+    pHarness.setBlocked(true, "awaiting parent");
+    pHarness.setBlocked(false);
     await tick();
     expect(states).toEqual(["blocked", "working"]);
   });

@@ -10,7 +10,7 @@ import { lastSpeaker, readReport, sessionPathFor } from "../src/session.ts";
 import { DEFAULTS } from "../src/settings.ts";
 import { createTools } from "../src/tools.ts";
 
-const host = (): ParentHarness => ({ harness: "pi", deliver: () => {}, setBlocked: () => {} });
+const pHarness = (): ParentHarness => ({ harness: "pi", deliver: () => {}, setBlocked: () => {} });
 
 const emptyHerdr = (): Herdr => ({
   tabCreate: async (_l, cwd) => ({ pane: "w1:p9", cwd }),
@@ -53,7 +53,7 @@ async function startArgs(opts: Partial<SpawnOpts>, settings = DEFAULTS) {
       );
     },
   };
-  const m = new Manager(host(), settings, fake);
+  const m = new Manager(pHarness(), settings, fake);
   const r = await m.spawn({
     prompt: "go",
     description: "d",
@@ -91,7 +91,7 @@ describe("claude child spawn", () => {
 describe("claude child model", () => {
   it("keeps bare ids and rejects non-anthropic providers", async () => {
     expect((await startArgs({ model: "haiku" })).flag("--model")).toBe("haiku");
-    const m = new Manager(host(), DEFAULTS, emptyHerdr());
+    const m = new Manager(pHarness(), DEFAULTS, emptyHerdr());
     await expect(
       m.spawn({
         prompt: "go",
@@ -225,7 +225,7 @@ describe("claude resume", () => {
         return { status: "idle", pane: "w1:p9", sessionId: "sess-1" };
       },
     };
-    const m = new Manager(host(), DEFAULTS, fake);
+    const m = new Manager(pHarness(), DEFAULTS, fake);
     const base: SpawnOpts = {
       prompt: "go",
       description: "d",
@@ -253,7 +253,7 @@ describe("harness selection", () => {
         kinds.push([kind, a]);
       },
     };
-    const h: ParentHarness = { ...host(), model: () => "anthropic/claude-x" };
+    const h: ParentHarness = { ...pHarness(), model: () => "anthropic/claude-x" };
     const tools = createTools(h, cwd, fake);
     await tools.agent.execute({ prompt: "p", description: "d", harness: "claude", run_in_background: true });
     await tools.agent.execute({ prompt: "p", description: "d", run_in_background: true });
@@ -289,7 +289,7 @@ describe("harness selection", () => {
       join(dir, ".pi", "agents", "cc.md"),
       "---\ndescription: d\nharness: claude\n---\n",
     );
-    const tools = createTools(host(), () => dir, fake);
+    const tools = createTools(pHarness(), () => dir, fake);
     const base = { prompt: "p", description: "d", run_in_background: true };
     await tools.agent.execute({ ...base, subagent_type: "cc" });
     await tools.agent.execute({ ...base, subagent_type: "cc", harness: "pi" });

@@ -1,6 +1,6 @@
 /**
  * paths.ts: pi's config locations, reimplemented so the core never imports
- * pi's runtime (the Claude host runs without it).
+ * pi's runtime (the Claude parent harness runs without it).
  */
 import { homedir } from "node:os";
 import { join } from "node:path";

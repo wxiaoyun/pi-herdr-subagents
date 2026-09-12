@@ -44,6 +44,8 @@ Claude Code children spawned by either parent get the MCP server injected automa
 | `KillAgent`      | Close the child's pane.                                                                                                                                                                                                                                                                                                                              |
 | `ListAgents`     | Children of this session with id, status, profile, harness and machine.                                                                                                                                                                                                                                                                              |
 
+Child ids are `<parent harness>-<name>-<n>`, for example `pi-scout-2`, unique among the live agents on the child's machine.
+
 A child's turn ends in status `idle`: its pane stays open and it keeps its context. Continue it with `SendMessage` (background) or `Agent` with `resume` (blocks like a spawn). Close it with `KillAgent` or by ending the parent session. Set `closeOnDone: true` to close panes at the end of every turn instead.
 
 ## Placement
@@ -79,7 +81,7 @@ Cross-harness spawns with no explicit model pass no model, so the child harness 
 
 ## Profiles
 
-Built in: `general-purpose` (all tools, spawns anything), `Worker` (all tools, may spawn `Scout` only), `Scout` (read-only tools, pick a cheap fast model). User profiles are markdown files in `.pi/agents/`, `.agents/agents/`, or `~/.pi/agent/agents/`. Later locations override earlier ones by name. The same locations serve both hosts.
+Built in: `general-purpose` (all tools, spawns anything), `Worker` (all tools, may spawn `Scout` only), `Scout` (read-only tools, pick a cheap fast model). User profiles are markdown files in `.pi/agents/`, `.agents/agents/`, or `~/.pi/agent/agents/`. Later locations override earlier ones by name. The same locations serve both parent harnesses.
 
 ```markdown
 ---
@@ -100,7 +102,7 @@ Tool names in user profiles are passed to the child harness as written. Model an
 
 ## Settings
 
-`~/.pi/agent/herdr-subagents.json` then `.pi/herdr-subagents.json` (project wins), read by both hosts:
+`~/.pi/agent/herdr-subagents.json` then `.pi/herdr-subagents.json` (project wins), read by both parent harnesses:
 
 ```json
 {

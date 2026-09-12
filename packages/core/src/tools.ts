@@ -1,5 +1,5 @@
 /**
- * tools.ts: the five tools, harness-neutral. Each host wraps them in its own
+ * tools.ts: the five tools, harness-neutral. Each parent harness wraps them in its own
  * registration API (pi registerTool, MCP tools/list + tools/call).
  */
 import { type Static, type TSchema, Type } from "typebox";
@@ -129,7 +129,7 @@ export interface ToolSet {
 
 /** Build the tools for a parent harness. `cwd` is resolved per call so project config is live. */
 export function createTools(
-  host: ParentHarness,
+  pHarness: ParentHarness,
   cwd: () => string,
   herdr?: Herdr,
 ): ToolSet {
@@ -139,7 +139,7 @@ export function createTools(
   const myId = process.env[ENV_ID];
   let manager: Manager | undefined;
   const getManager = () => {
-    manager ??= new Manager(host, loadSettings(cwd()), herdr);
+    manager ??= new Manager(pHarness, loadSettings(cwd()), herdr);
     return manager;
   };
 
@@ -167,7 +167,7 @@ export function createTools(
         }
       }
       const settings = loadSettings(dir);
-      const harness: Harness = p.harness ?? profile.harness ?? host.harness;
+      const harness: Harness = p.harness ?? profile.harness ?? pHarness.harness;
       try {
         const r = await m.spawn(
           {
@@ -179,8 +179,8 @@ export function createTools(
               p.model ??
               profile.model ??
               settings.defaultModel ??
-              (harness === host.harness ? host.model?.() : undefined),
-            thinking: p.thinking ?? profile.thinking ?? host.thinking?.(),
+              (harness === pHarness.harness ? pHarness.model?.() : undefined),
+            thinking: p.thinking ?? profile.thinking ?? pHarness.thinking?.(),
             cwd: p.cwd ?? dir,
             machine: p.machine,
             background: p.run_in_background ?? false,
@@ -235,7 +235,7 @@ export function createTools(
         return err(`SendMessage failed: ${String(e)}`);
       }
       if (p.expect_reply && parentPane && !p.to) {
-        host.setBlocked(true, "awaiting parent");
+        pHarness.setBlocked(true, "awaiting parent");
         return ok("Sent to parent. End your turn now and wait for the reply.");
       }
       return ok(`Sent to ${to}.`);
@@ -271,7 +271,7 @@ export function createTools(
     },
   };
 
-  log("tools_created", { harness: host.harness, depth, profile: myProfile });
+  log("tools_created", { harness: pHarness.harness, depth, profile: myProfile });
   return {
     agent,
     result,

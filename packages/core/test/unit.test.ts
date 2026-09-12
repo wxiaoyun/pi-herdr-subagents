@@ -15,7 +15,7 @@ import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.ts";
 import { readReport } from "../src/session.ts";
 import { DEFAULTS, loadSettings } from "../src/settings.ts";
 
-/** Minimal host stub so background watchers can deliver without throwing. */
+/** Minimal parent harness stub so background watchers can deliver without throwing. */
 const piStub = (): ParentHarness => ({
   harness: "pi",
   deliver: () => {},
@@ -461,13 +461,13 @@ describe("manager queue", () => {
       paneClose: async () => {},
     };
     const sent: string[] = [];
-    const host: ParentHarness = {
+    const pHarness: ParentHarness = {
       ...piStub(),
       deliver: (t: string) => {
         sent.push(t);
       },
     };
-    const m = new Manager(host, { ...DEFAULTS, maxConcurrent: 1 }, fake);
+    const m = new Manager(pHarness, { ...DEFAULTS, maxConcurrent: 1 }, fake);
     const base: SpawnOpts = {
       prompt: "go",
       description: "d",

@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "type": "module",
   "private": true,
-  "description": "pi extension host",
+  "description": "pi extension, the pi parent harness",
   "dependencies": { "@herdr-subagents/core": "*" },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

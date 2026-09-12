@@ -16,7 +16,7 @@ export default function (pi: ExtensionAPI) {
   let model: string | undefined;
   let awaitingParent = false;
 
-  const host: ParentHarness = {
+  const pHarness: ParentHarness = {
     harness: "pi",
     model: () => model,
     thinking: () => pi.getThinkingLevel(),
@@ -38,10 +38,10 @@ export default function (pi: ExtensionAPI) {
 
   // child side: clear herdr "blocked" once the parent's reply arrives
   pi.on("input", () => {
-    if (awaitingParent) host.setBlocked(false);
+    if (awaitingParent) pHarness.setBlocked(false);
   });
 
-  const tools = createTools(host, () => cwd);
+  const tools = createTools(pHarness, () => cwd);
 
   const snippets: Record<string, Partial<Parameters<typeof pi.registerTool>[0]>> = {
     Agent: {
