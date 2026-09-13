@@ -94,7 +94,10 @@ const AgentParams = Type.Object({
     Type.String({ description: "Short handle used in the agent id." }),
   ),
   resume: Type.Optional(
-    Type.String({ description: "Existing agent id to continue with this prompt." }),
+    Type.String({
+      description:
+        "Existing agent id to continue with this prompt: a child, or an idle pi or claude peer from ListAgents. Its report comes back here like a spawn's.",
+    }),
   ),
   timeout_ms: Type.Optional(
     Type.Number({
@@ -112,7 +115,7 @@ const ResultParams = Type.Object({
 
 const SendParams = Type.Object({
   to: Type.Optional(
-    Type.String({ description: "Agent id or pane id. Default: parent." }),
+    Type.String({ description: "Agent id from ListAgents, or a pane id. Default: parent." }),
   ),
   message: Type.String(),
   kind: Type.Optional(
@@ -123,7 +126,7 @@ const SendParams = Type.Object({
     ]),
   ),
   expect_reply: Type.Optional(
-    Type.Boolean({ description: "Mark this agent as waiting for the parent." }),
+    Type.Boolean({ description: "Mark this agent as waiting for the recipient's reply." }),
   ),
 });
 
@@ -217,7 +220,7 @@ export function createTools(
   const result: ToolDef<typeof ResultParams> = {
     name: "GetAgentResult",
     description:
-      "Status and output of a child agent. With wait=true blocks until it finishes or blocks on a question.",
+      "Status and output of any agent from ListAgents: the report of its latest turn when idle (pi and claude), else its recent screen. With wait=true blocks until it finishes or blocks on a question.",
     parameters: ResultParams,
     async execute(p, signal) {
       try {
@@ -239,20 +242,23 @@ export function createTools(
   const send: ToolDef<typeof SendParams> = {
     name: "SendMessage",
     description:
-      "Send text to another agent (pi or Claude Code). To an idle child this starts a new turn and its report arrives later as a message. Omit `to` to reach the parent (child agents only). kind=message queues a prompt (steers if the target is busy), kind=interrupt presses esc first, kind=keys sends raw keys like `enter` or `ctrl+c`. Set expect_reply=true when you need an answer before continuing: end your turn after calling it, the reply arrives as your next message.",
+      "Send text to any agent from ListAgents, child or peer. The recipient sees `[from <your id>]` and replies with its own SendMessage. To an idle child this starts a new turn and its report arrives later as a message; a peer's report does not come back (use Agent resume for that). Omit `to` to reach the parent (child agents only). kind=message queues a prompt (steers if the target is busy), kind=interrupt presses esc first, kind=keys sends raw keys like `enter` or `ctrl+c`. Set expect_reply=true when you need an answer before continuing: end your turn after calling it, the reply arrives as your next message.",
     parameters: SendParams,
     async execute(p) {
       const to = p.to ?? parentPane;
       if (!to) return err("no `to` given and this agent has no parent");
-      const prefix = !p.to && myId ? `[from ${myId}] ` : "";
+      const kind = p.kind ?? "message";
+      const me = myId ?? process.env.HERDR_PANE_ID;
+      const prefix = kind !== "keys" && me ? `[from ${me}] ` : "";
       try {
-        await getManager().send(to, prefix + p.message, p.kind ?? "message");
+        await getManager().send(to, prefix + p.message, kind);
       } catch (e) {
         return err(`SendMessage failed: ${String(e)}`);
       }
-      if (p.expect_reply && parentPane && !p.to) {
-        pHarness.setBlocked(true, "awaiting parent");
-        return ok("Sent to parent. End your turn now and wait for the reply.");
+      if (p.expect_reply) {
+        const who = p.to ?? "parent";
+        pHarness.setBlocked(true, `awaiting ${who}`);
+        return ok(`Sent to ${who}. End your turn now and wait for the reply.`);
       }
       return ok(`Sent to ${to}.`);
     },
@@ -260,7 +266,7 @@ export function createTools(
 
   const kill: ToolDef<typeof KillParams> = {
     name: "KillAgent",
-    description: "Close a child agent's pane. Irreversible.",
+    description: "Close a child agent's pane. Irreversible. Only this session's children, never a peer.",
     parameters: KillParams,
     async execute(p) {
       try {
@@ -274,14 +280,25 @@ export function createTools(
 
   const list: ToolDef<typeof ListParams> = {
     name: "ListAgents",
-    description: "Children of this session: id, status, profile, harness, machine, one per line.",
+    description:
+      "Every agent herdr sees, on this machine and on enabled saved machines, one per line: id, relation to this session (parent, child, peer), harness, status, machine, cwd. Children add profile and description. Ids off this machine are `<machine>/<id>`. Use the ids as SendMessage `to`, Agent `resume` and GetAgentResult `agent_id`.",
     parameters: ListParams,
     async execute() {
-      const kids = getManager().list();
-      if (!kids.length) return ok("no children");
+      const all = await getManager().agents();
+      if (!all.length) return ok("no other agents");
       return ok(
-        kids
-          .map((c) => `${c.id}  ${c.status}  ${c.profile}  ${c.harness}  ${c.machine?.label ?? "local"}  ${c.description}`)
+        all
+          .map((a) =>
+            [
+              a.id,
+              a.relation,
+              a.harness ?? "-",
+              a.status,
+              a.machine?.label ?? "local",
+              a.cwd ?? "-",
+              ...(a.child ? [a.child.profile, a.child.description] : []),
+            ].join("  "),
+          )
           .join("\n"),
       );
     },

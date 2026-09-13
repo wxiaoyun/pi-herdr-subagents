@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Herdr, HerdrError, LOG_ENV, log } from "../src/herdr.ts";
-import { childWorkspaceLabel, Manager, type SpawnOpts, sameDir } from "../src/manager.ts";
+import { childWorkspaceLabel, ENV_PARENT, Manager, type SpawnOpts, sameDir } from "../src/manager.ts";
 import type { ParentHarness } from "../src/parent-harness.ts";
 import { BUILTIN_PROFILES, loadProfiles } from "../src/profiles.ts";
 import { readReport } from "../src/session.ts";
@@ -497,6 +497,69 @@ describe("manager queue", () => {
     expect(sent[0]).toContain("test/model");
     expect(sent[0]).toContain("screen");
     expect(await m.result(a.id, false, 0)).toContain("test/model");
+  });
+});
+
+describe("peers", () => {
+  it("lists every agent with its relation, resumes an idle peer, never kills one", async () => {
+    const f = join(tmp(), "peer.jsonl");
+    writeFileSync(
+      f,
+      JSON.stringify({
+        type: "message",
+        message: { role: "assistant", content: [{ type: "text", text: "peer answer" }] },
+      }),
+    );
+    const box = { id: "abc123", label: "box", target: "me@box", enabled: true };
+    const remote: Herdr = {
+      ...emptyHerdr(),
+      agentList: async () => [{ status: "working", pane: "w1:p1", harness: "codex" }],
+      agentGet: async () => ({ status: "working", pane: "w1:p1", harness: "codex" }),
+    };
+    const prompts: string[] = [];
+    let childId: string | undefined;
+    const fake: Herdr = {
+      ...emptyHerdr(),
+      machine: () => remote,
+      machineList: async () => [box, { ...box, id: "off", label: "off", enabled: false }],
+      agentList: async () => [
+        { status: "working", pane: "w1:p1", harness: "claude" },
+        { status: "idle", pane: "w1:p2", harness: "pi" },
+        { status: "idle", pane: "w1:p3", name: childId, harness: "pi" },
+        { status: "idle", pane: "w1:p4", harness: "pi", sessionPath: f },
+      ],
+      agentGet: async (ref) => ({ status: "idle", pane: ref, harness: "pi", sessionPath: f }),
+      agentPromptWait: async (ref, text) => {
+        prompts.push(`${ref} ${text}`);
+        return { status: "idle", pane: ref };
+      },
+    };
+    const env = { HERDR_PANE_ID: process.env.HERDR_PANE_ID, [ENV_PARENT]: process.env[ENV_PARENT] };
+    process.env.HERDR_PANE_ID = "w1:p1";
+    process.env[ENV_PARENT] = "w1:p2";
+    try {
+      const m = new Manager(piStub(), { ...DEFAULTS, closeOnDone: true }, fake);
+      const base = { prompt: "go", description: "d", profile: BUILTIN_PROFILES[0], harness: "pi" as const, cwd: "/", background: false, timeoutMs: 0, depth: 1 };
+      childId = (await m.spawn(base)).id;
+      expect((await m.agents()).map((a) => `${a.id} ${a.relation}`)).toEqual([
+        "w1:p2 parent",
+        `${childId} child`,
+        "w1:p4 peer",
+        "box/w1:p1 peer",
+      ]);
+      const r = await m.spawn({ ...base, prompt: "review", resume: "w1:p4" });
+      expect(r.text).toContain("[peer w1:p4 | pi | idle");
+      expect(r.text).toContain("peer answer");
+      expect(r.text).not.toContain("KillAgent");
+      expect(prompts.at(-1)).toBe("w1:p4 review");
+      expect((await m.agents()).find((a) => a.id === "w1:p4")?.relation).toBe("peer");
+      await expect(m.kill("w1:p4")).rejects.toThrow("only its parent can kill it");
+      await expect(m.spawn({ ...base, resume: "box/w1:p1" })).rejects.toThrow("only pi and claude peers");
+    } finally {
+      for (const [k, v] of Object.entries(env))
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+    }
   });
 });
 

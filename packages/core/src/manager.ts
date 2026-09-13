@@ -56,6 +56,22 @@ export interface Child {
   startedAt: number;
   released: boolean;
   watcher?: AbortController;
+  /** herdr name or pane id on its own server, when it differs from `id`. */
+  ref?: string;
+  /** A Peer this session Resumed: gets Delivery, is never killed or relaunched. */
+  peer?: boolean;
+}
+
+export interface AgentEntry {
+  /** herdr label, else pane id, prefixed `<machine label>/` off the local machine. */
+  id: string;
+  relation: "parent" | "child" | "peer";
+  /** Harness herdr detected, e.g. pi, claude, codex. */
+  harness?: string;
+  status: string;
+  cwd?: string;
+  machine?: Machine;
+  child?: Child;
 }
 
 export interface SpawnOpts {
@@ -132,6 +148,103 @@ export class Manager {
 
   list(): Child[] {
     return [...this.children.values()];
+  }
+
+  private ref(child: Child): string {
+    return child.ref ?? child.id;
+  }
+
+  private idOf(child: Child): string {
+    return child.machine && !child.peer ? `${child.machine.label}/${child.id}` : child.id;
+  }
+
+  /** A child or Resumed Peer by the id `agents()` shows. */
+  private lookup(id: string): Child | undefined {
+    return this.children.get(id) ?? this.list().find((c) => this.idOf(c) === id);
+  }
+
+  /** Where an id lives: a known child, else `<machine label>/<ref>` or a local ref. */
+  private async target(id: string): Promise<{ child?: Child; machine?: Machine; ref: string }> {
+    const child = this.lookup(id);
+    if (child) return { child, machine: child.machine, ref: this.ref(child) };
+    const slash = id.indexOf("/");
+    if (slash < 0) return { ref: id };
+    return { machine: await this.machineFor(id.slice(0, slash)), ref: id.slice(slash + 1) };
+  }
+
+  /** Every agent herdr sees, locally and on enabled saved machines, except this session. */
+  async agents(): Promise<AgentEntry[]> {
+    const machines = (await this.h.machineList().catch(() => [])).filter((m) => m.enabled !== false);
+    const where: Array<Machine | undefined> = [undefined, ...machines];
+    const lists = await Promise.all(
+      where.map((machine) =>
+        this.hFor({ machine })
+          .agentList()
+          .catch((e) => {
+            log("agent_list", { machine: machine?.label, error: String(e) });
+            return [] as AgentInfo[];
+          }),
+      ),
+    );
+    const me = process.env.HERDR_PANE_ID;
+    const parent = process.env[ENV_PARENT];
+    const out: AgentEntry[] = [];
+    const seen = new Set<Child>();
+    lists.forEach((infos, i) => {
+      const machine = where[i];
+      for (const a of infos) {
+        if (!machine && a.pane === me) continue;
+        const ref = a.name ?? a.pane;
+        const id = machine ? `${machine.label}/${ref}` : ref;
+        const found = this.lookup(id);
+        if (found) seen.add(found);
+        const child = found && !found.peer ? found : undefined;
+        out.push({
+          id,
+          relation: child ? "child" : !machine && a.pane === parent ? "parent" : "peer",
+          harness: a.harness,
+          status: child?.status ?? a.status,
+          cwd: a.cwd,
+          machine,
+          child,
+        });
+      }
+    });
+    // Children herdr no longer lists (queued, killed, or on an unreachable machine).
+    for (const c of this.children.values())
+      if (!c.peer && !seen.has(c))
+        out.push({ id: this.idOf(c), relation: "child", harness: c.harness, status: c.status, cwd: c.cwd, machine: c.machine, child: c });
+    return out;
+  }
+
+  /** A Child-shaped record for a Peer, so Resume and reports reuse the child paths. */
+  private async peer(id: string, background = true): Promise<Child> {
+    const { machine, ref } = await this.target(id);
+    const info = await this.hFor({ machine })
+      .agentGet(ref)
+      .catch((e) => {
+        throw new Error(`unknown agent ${id}: ${String(e)}`);
+      });
+    const harness = info.harness === "pi" || info.harness === "claude" ? info.harness : undefined;
+    return {
+      id,
+      ref,
+      machine,
+      peer: true,
+      harness: (harness ?? info.harness ?? "unknown") as Harness,
+      profile: "peer",
+      description: "",
+      cwd: info.cwd,
+      pane: info.pane,
+      background,
+      status: (info.status === "working" ? "running" : info.status) as ChildStatus,
+      sessionId: info.sessionId,
+      sessionPath: harness
+        ? (info.sessionPath ?? sessionPathFor(harness, info.cwd ?? "~", info.sessionId, !!machine))
+        : undefined,
+      startedAt: Date.now(),
+      released: true,
+    };
   }
 
   /** herdr helpers for where this child lives. */
@@ -438,8 +551,8 @@ export class Manager {
     o: SpawnOpts,
     signal?: AbortSignal,
   ): Promise<SpawnResult> {
-    const child = this.children.get(o.resume!);
-    if (!child) throw new Error(`unknown subagent ${o.resume}`);
+    const child = this.lookup(o.resume!);
+    if (!child || child.peer) return this.resumePeer(o, signal);
     child.background = o.background;
     const alive = await this.hFor(child)
       .agentGet(child.id)
@@ -475,6 +588,25 @@ export class Manager {
     return this.foreground(child, o.prompt, o.timeoutMs, signal);
   }
 
+  /** Resume an Idle Peer: its Report is delivered here, its lineage is unchanged. */
+  private async resumePeer(o: SpawnOpts, signal?: AbortSignal): Promise<SpawnResult> {
+    const p = await this.peer(o.resume!, o.background);
+    if (p.harness !== "pi" && p.harness !== "claude")
+      throw new Error(`${p.id} runs ${p.harness}; only pi and claude peers can be resumed, SendMessage it instead`);
+    if (p.status !== "idle")
+      throw new Error(`${p.id} is ${p.status}; only an idle peer can be resumed, SendMessage it instead`);
+    this.children.set(p.id, p);
+    await this.acquire(signal);
+    p.released = false;
+    p.status = "running";
+    log("peer_resume", { id: p.id, machine: p.machine?.label });
+    if (o.background) {
+      this.watchPrompt(p, o.prompt, o.timeoutMs);
+      return { id: p.id, status: "running", text: `${p.id} resumed${this.where(p)}` };
+    }
+    return this.foreground(p, o.prompt, o.timeoutMs, signal);
+  }
+
   // ---- foreground / background waiting --------------------------------------
 
   private async foreground(
@@ -486,8 +618,8 @@ export class Manager {
     const h = this.hFor(child);
     try {
       const info = prompt
-        ? await h.agentPromptWait(child.id, prompt, timeoutMs, signal)
-        : await h.agentWait(child.id, timeoutMs, signal);
+        ? await h.agentPromptWait(this.ref(child), prompt, timeoutMs, signal)
+        : await h.agentWait(this.ref(child), timeoutMs, signal);
       await this.finish(child, info);
     } catch (e) {
       if (signal?.aborted) {
@@ -532,7 +664,7 @@ export class Manager {
     const h = this.hFor(child);
     const deadline = Date.now() + this.stallGraceMs;
     while (Date.now() < deadline) {
-      const info = await h.agentGet(child.id).catch(() => undefined);
+      const info = await h.agentGet(this.ref(child)).catch(() => undefined);
       if (!info) return false;
       const path = info.sessionPath ?? child.sessionPath;
       if (path && (await this.speaker(child, path)) === "assistant") {
@@ -561,14 +693,14 @@ export class Manager {
     this.spawnWatcher(
       child,
       (signal) =>
-        this.hFor(child).agentPromptWait(child.id, prompt, timeoutMs, signal),
+        this.hFor(child).agentPromptWait(this.ref(child), prompt, timeoutMs, signal),
     );
   }
 
   private watch(child: Child, timeoutMs: number): void {
     this.spawnWatcher(
       child,
-      (signal) => this.hFor(child).agentWait(child.id, timeoutMs, signal),
+      (signal) => this.hFor(child).agentWait(this.ref(child), timeoutMs, signal),
     );
   }
 
@@ -604,10 +736,11 @@ export class Manager {
       return;
     }
     child.report = await this.collect(child);
-    child.status = this.settings.closeOnDone ? "done" : "idle";
+    const close = this.settings.closeOnDone && !child.peer;
+    child.status = close ? "done" : "idle";
     log("child_done", { id: child.id, usage: formatUsage(child.report.usage) });
     this.release(child);
-    if (this.settings.closeOnDone) await this.closePane(child);
+    if (close) await this.closePane(child);
   }
 
   private async timeout(child: Child): Promise<void> {
@@ -633,7 +766,7 @@ export class Manager {
    */
   private lost(child: Child, e: unknown): void {
     this.fail(child, e);
-    if (child.machine) child.status = "idle";
+    if (child.machine || child.peer) child.status = "idle";
   }
 
   private async fromSession(child: Child): Promise<Report | undefined> {
@@ -651,7 +784,7 @@ export class Manager {
     const r = await this.fromSession(child);
     if (r?.text) return r;
     const screen = await this.hFor(child)
-      .agentRead(child.id, 120)
+      .agentRead(this.ref(child), 120)
       .catch(() => "");
     return {
       text: screen.trim(),
@@ -659,15 +792,22 @@ export class Manager {
     };
   }
 
+  private who(child: Child): string {
+    const what = child.peer
+      ? `peer ${child.id} | ${child.harness}`
+      : `subagent ${child.id} | ${child.profile} | ${child.model ?? "default model"}`;
+    return `${what}${child.machine ? ` | ${child.machine.label}` : ""} | ${child.status}`;
+  }
+
   formatReport(child: Child): string {
     const r = child.report;
-    const head = `[subagent ${child.id} | ${child.profile} | ${child.model ?? "default model"}${child.machine ? ` | ${child.machine.label}` : ""} | ${child.status}${r ? ` | ${formatUsage(r.usage)}` : ""}]`;
+    const head = `[${this.who(child)}${r ? ` | ${formatUsage(r.usage)}` : ""}]`;
     const body = r?.text || "(no output)";
     const tail =
       child.status === "blocked"
         ? `\n(${child.id} is waiting for a reply via SendMessage)`
         : child.status === "idle"
-          ? `\n(${child.id} is idle: SendMessage to it or Agent resume to continue, KillAgent to close)`
+          ? `\n(${child.id} is idle: SendMessage to it or Agent resume to continue${child.peer ? "" : ", KillAgent to close"})`
           : "";
     return `${head}\n${body}${tail}`;
   }
@@ -684,8 +824,7 @@ export class Manager {
     timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<string> {
-    const child = this.children.get(id);
-    if (!child) throw new Error(`unknown subagent ${id}`);
+    const child = this.lookup(id) ?? (await this.peer(id));
     if (
       wait &&
       (child.status === "running" ||
@@ -696,12 +835,14 @@ export class Manager {
       child.watcher = undefined;
       return (await this.foreground(child, undefined, timeoutMs, signal)).text;
     }
-    if (["idle", "done", "killed"].includes(child.status))
+    if (["idle", "done", "killed"].includes(child.status)) {
+      if (child.peer && !child.report) child.report = await this.collect(child);
       return this.formatReport(child);
+    }
     const recent = await this.hFor(child)
-      .agentRead(id, 40)
+      .agentRead(this.ref(child), 40)
       .catch(() => "");
-    return `[subagent ${id} | ${child.profile} | ${child.model ?? "default model"} | ${child.status} | pane ${child.pane}${this.where(child)}]\n${recent.trim()}`;
+    return `[${this.who(child)} | pane ${child.pane}]\n${recent.trim()}`;
   }
 
   async send(
@@ -709,17 +850,18 @@ export class Manager {
     message: string,
     kind: "message" | "interrupt" | "keys",
   ): Promise<void> {
-    const child = this.children.get(to);
-    const h = this.hFor(child);
+    const { child, machine, ref } = await this.target(to);
+    const h = this.hFor({ machine });
     if (kind === "keys") {
-      await h.sendKeys(to, message.split(/\s+/).filter(Boolean));
+      await h.sendKeys(ref, message.split(/\s+/).filter(Boolean));
       return;
     }
     if (kind === "interrupt") {
-      await h.sendKeys(to, ["esc"]);
+      await h.sendKeys(ref, ["esc"]);
       await new Promise((r) => setTimeout(r, 300));
     }
-    if (child?.status === "idle") {
+    // A Message to an Idle Peer is not a Resume: nothing is delivered back.
+    if (child?.status === "idle" && !child.peer) {
       // Resume: a new background turn, the report is delivered when it ends.
       child.status = "running";
       child.background = true;
@@ -729,16 +871,16 @@ export class Manager {
       return;
     }
     try {
-      await h.agentPrompt(to, message);
+      await h.agentPrompt(ref, message);
     } catch (e) {
       if (!(e instanceof HerdrError && e.code === "agent_blocked")) throw e;
-      const pane = child?.pane ?? (await h.agentGet(to)).pane;
+      const pane = child?.pane ?? (await h.agentGet(ref)).pane;
       log("send_via_pane", { to, pane });
       await h.paneRun(pane, message);
     }
     if (child && child.status === "blocked") {
       await h
-        .agentWaitUntil(to, ["working", "idle", "done"], 15000)
+        .agentWaitUntil(ref, ["working", "idle", "done"], 15000)
         .catch((e) => log("unblock_wait", { to, error: String(e) }));
       child.status = "running";
       if (child.background) this.watch(child, this.settings.defaultTimeoutMs);
@@ -746,8 +888,9 @@ export class Manager {
   }
 
   async kill(id: string): Promise<void> {
-    const child = this.children.get(id);
-    if (!child) throw new Error(`unknown subagent ${id}`);
+    const child = this.lookup(id);
+    if (!child) throw new Error(`unknown child ${id}: only this session's children can be killed`);
+    if (child.peer) throw new Error(`${id} is a peer: only its parent can kill it`);
     child.watcher?.abort();
     await this.closePane(child);
     child.status = "killed";
@@ -755,6 +898,7 @@ export class Manager {
   }
 
   async focus(id: string): Promise<void> {
-    await this.hFor(this.children.get(id)).agentFocus(id);
+    const { machine, ref } = await this.target(id);
+    await this.hFor({ machine }).agentFocus(ref);
   }
 }

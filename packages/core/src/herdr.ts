@@ -122,12 +122,17 @@ export interface AgentInfo {
   /** pi reports a path, Claude Code reports an id. */
   sessionPath?: string;
   sessionId?: string;
+  /** Harness herdr detected in the pane, e.g. pi, claude, codex. */
+  harness?: string;
+  cwd?: string;
 }
 
 const toAgentInfo = (a: any): AgentInfo => ({
   status: a.agent_status ?? "unknown",
   pane: a.pane_id,
   name: a.label,
+  harness: a.agent,
+  cwd: a.cwd,
   sessionPath:
     a.agent_session?.kind === "path" ? a.agent_session.value : undefined,
   sessionId: a.agent_session?.kind === "id" ? a.agent_session.value : undefined,
@@ -139,6 +144,8 @@ export interface Machine {
   label: string;
   /** SSH destination as saved by `herdr machine add`. */
   target: string;
+  /** Disabled machines are skipped when listing agents. */
+  enabled?: boolean;
 }
 
 /** Quote for a remote POSIX shell. A leading `~/` stays unquoted so ssh expands it. */
@@ -161,6 +168,7 @@ export function bind(machine?: Machine) {
         id: x.id,
         label: x.label,
         target: x.target,
+        enabled: x.enabled,
       }));
     },
     /** Saved machine labels, read once at startup for the tool description. Local, no ssh. */

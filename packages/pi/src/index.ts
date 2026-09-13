@@ -4,7 +4,7 @@
  * event bus.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createTools, log, type ParentHarness } from "@herdr-agents/core";
+import { type AgentEntry, createTools, log, type ParentHarness } from "@herdr-agents/core";
 
 export default function (pi: ExtensionAPI) {
   if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) {
@@ -57,6 +57,7 @@ export default function (pi: ExtensionAPI) {
       promptGuidelines: [
         "Use SendMessage without `to` to ask the parent agent a clarifying question, then end the turn and wait for the reply.",
         "Use SendMessage with `to` set to an idle child's id to give it a follow-up task, its report arrives as a later message.",
+        "Use ListAgents to see every agent in herdr, including peers you did not spawn. SendMessage reaches any of them, Agent resume gives an idle pi or claude peer a task and returns its report.",
       ],
     },
   };
@@ -81,28 +82,61 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  // ponytail: completions reuse one listing for 5s, since listing runs a
+  // herdr call per saved machine; drop the cache if staleness ever bites.
+  let listing: { at: number; agents: Promise<AgentEntry[]> } | undefined;
+  const listCached = () => {
+    if (!listing || Date.now() - listing.at > 5000)
+      listing = { at: Date.now(), agents: tools.manager().agents().catch(() => []) };
+    return listing.agents;
+  };
+
+  const send = async (to: string, message: string, notify: (t: string, k: "info" | "error") => void) => {
+    const r = await tools.send.execute({ to, message });
+    notify(r.text, r.isError ? "error" : "info");
+  };
+
   pi.registerCommand("agents", {
-    description: "List herdr subagents, focus or kill one",
-    handler: async (_args, ctx) => {
+    description: "List herdr agents, focus, message or kill one. `/agents send <id> <message>` messages one directly",
+    async getArgumentCompletions(prefix) {
+      const m = prefix.match(/^send\s+(\S*)$/);
+      if (!m)
+        return !prefix.includes(" ") && "send".startsWith(prefix)
+          ? [{ value: "send ", label: "send", description: "message an agent" }]
+          : null;
+      const items = (await listCached())
+        .filter((a) => a.id.startsWith(m[1]))
+        .map((a) => ({
+          value: `send ${a.id} `,
+          label: a.id,
+          description: `${a.relation} ${a.harness ?? "-"} ${a.status}${a.machine ? ` ${a.machine.label}` : ""}`,
+        }));
+      return items.length ? items : null;
+    },
+    handler: async (args, ctx) => {
       cwd = ctx.cwd;
+      const notify = (t: string, k: "info" | "error") => ctx.ui.notify(t, k);
+      const direct = args.trim().match(/^send\s+(\S+)\s+([\s\S]+)$/);
+      if (direct) return send(direct[1], direct[2], notify);
+      if (args.trim()) return notify("usage: /agents [send <id> <message>]", "error");
       const m = tools.manager();
-      const kids = m.list();
-      if (!kids.length) {
-        ctx.ui.notify("no subagents", "info");
-        return;
-      }
-      const labels = kids.map(
-        (c) =>
-          `${c.id}  ${c.status.padEnd(8)} ${c.profile.padEnd(16)} ${c.harness.padEnd(6)} ${(c.machine?.label ?? "local").padEnd(12)} ${c.pane ?? "-"}  ${c.description}`,
+      const all = await m.agents();
+      if (!all.length) return notify("no other agents", "info");
+      const labels = all.map(
+        (a) =>
+          `${a.id}  ${a.relation.padEnd(6)} ${(a.harness ?? "-").padEnd(6)} ${a.status.padEnd(8)} ${(a.machine?.label ?? "local").padEnd(12)} ${a.child?.description ?? a.cwd ?? ""}`,
       );
-      const pick = await ctx.ui.select("Subagents", labels);
+      const pick = await ctx.ui.select("Agents", labels);
       if (!pick) return;
-      const child = kids[labels.indexOf(pick)];
-      const action = await ctx.ui.select(child.id, ["focus", "kill", "cancel"]);
-      if (action === "focus")
-        await m.focus(child.id).catch((e) => ctx.ui.notify(String(e), "error"));
-      if (action === "kill")
-        await m.kill(child.id).catch((e) => ctx.ui.notify(String(e), "error"));
+      const a = all[labels.indexOf(pick)];
+      const actions = a.relation === "child" ? ["focus", "send", "kill", "cancel"] : ["focus", "send", "cancel"];
+      const action = await ctx.ui.select(a.id, actions);
+      if (action === "focus") await m.focus(a.id).catch((e) => notify(String(e), "error"));
+      if (action === "kill") await m.kill(a.id).catch((e) => notify(String(e), "error"));
+      if (action === "send") {
+        const text = await ctx.ui.input(`Message ${a.id}`);
+        if (text?.trim()) await send(a.id, text, notify);
+      }
     },
   });
 }
