@@ -1,3 +1,4 @@
-## Pi source code
+## Dependency source code reference
 
-If you need to refer to Pi's source code, check for ../pi
+- `pi`: ../pi
+- `herdr`: ../herdr
