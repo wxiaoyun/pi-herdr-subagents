@@ -64,13 +64,13 @@ describe("logging", () => {
       process.env[LOG_ENV] = "1";
       log("default");
       expect(
-        readFileSync(join(agentDir, "herdr-subagents-debug.log"), "utf8"),
-      ).toBe("[herdr-subagents] stage=default \n");
+        readFileSync(join(agentDir, "herdr-agents-debug.log"), "utf8"),
+      ).toBe("[herdr-agents] stage=default \n");
 
       process.env[LOG_ENV] = path;
       log("test", { target: "/tmp/example", status: 200 });
       expect(readFileSync(path, "utf8")).toBe(
-        '[herdr-subagents] stage=test target="/tmp/example" status=200\n',
+        '[herdr-agents] stage=test target="/tmp/example" status=200\n',
       );
     } finally {
       if (previousLog === undefined) delete process.env[LOG_ENV];
@@ -150,12 +150,12 @@ describe("settings", () => {
     const cwd = tmp();
     const agentDir = tmp();
     writeFileSync(
-      join(agentDir, "herdr-subagents.json"),
+      join(agentDir, "herdr-agents.json"),
       JSON.stringify({ maxConcurrent: 2, maxDepth: 5 }),
     );
     mkdirSync(join(cwd, ".pi"));
     writeFileSync(
-      join(cwd, ".pi", "herdr-subagents.json"),
+      join(cwd, ".pi", "herdr-agents.json"),
       JSON.stringify({ maxConcurrent: 7, claudeArgs: ["--verbose"] }),
     );
     expect(loadSettings(cwd, agentDir)).toEqual({
@@ -547,7 +547,7 @@ describe("machines and idle children", () => {
       machine: (t) => tagged(t.label),
       machineList: async () => [box],
       tabCreate: async (_l, cwd, env) => {
-        seen.push(`${tag}:tab parent=${env.HERDR_SUBAGENT_PARENT}`);
+        seen.push(`${tag}:tab parent=${env.HERDR_AGENTS_PARENT}`);
         return { pane: "w9:p1", cwd };
       },
       stage: async (dir, as) => {
@@ -585,7 +585,7 @@ describe("machines and idle children", () => {
     }
     expect(seen).toEqual([
       "box:tab parent=",
-      "box:stage /tmp/pi-herdr-subagents-X",
+      "box:stage /tmp/herdr-agents-X",
       "box:start mcp=false",
       "box:wait",
       "box:read /remote/s.jsonl",

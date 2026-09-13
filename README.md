@@ -1,8 +1,8 @@
-# pi-herdr-subagents
+# herdr-agents
 
 Spawn, message, inspect and kill child coding agents through the [herdr](https://herdr.dev) CLI. Parent and child can each be **pi** or **Claude Code**. Every child is a real interactive session in a herdr pane. Lifecycle (`working`, `idle`, `done`, `blocked`) comes from herdr. The final report is the last assistant message parsed from the child's session file.
 
-Vocabulary is in [CONTEXT.md](./CONTEXT.md). The one architectural decision is in [docs/adr](./docs/adr).
+Vocabulary is in [CONTEXT.md](./CONTEXT.md).
 
 ## Requirements
 
@@ -21,7 +21,7 @@ pi install git:github.com/wxiaoyun/pi-herdr-subagents
 Claude Code parent, once per user (path is wherever you cloned or pi installed the repo):
 
 ```
-claude mcp add -s user herdr -- node <repo>/packages/claude/bin/herdr-subagents-mcp.ts
+claude mcp add -s user herdr -- node <repo>/packages/claude/bin/herdr-agents-mcp.ts
 ```
 
 Claude Code children spawned by either parent get the MCP server injected automatically and do not need the registration.
@@ -66,7 +66,7 @@ In pi, `/agents` lists live children, focus or kill one.
 
 The saved machine labels are listed in the `Agent` description, read once when the parent harness starts. A machine added later still works by name, it is just not listed until restart.
 
-The child's tab lands in the same `<label>-agents` workspace on the machine. Its report is read from its session file over `ssh <target> cat`. A machine child gets no `HERDR_SUBAGENT_PARENT` and no MCP config, so it cannot spawn or message back; the parent still reaches it with `SendMessage`, `resume` and `KillAgent`. If the SSH bridge drops mid-turn the child goes `idle` with the error as its report; `resume` reattaches, or relaunches it from its session if it is gone. Nothing syncs files or branches between machines.
+The child's tab lands in the same `<label>-agents` workspace on the machine. Its report is read from its session file over `ssh <target> cat`. A machine child gets no `HERDR_AGENTS_PARENT` and no MCP config, so it cannot spawn or message back; the parent still reaches it with `SendMessage`, `resume` and `KillAgent`. If the SSH bridge drops mid-turn the child goes `idle` with the error as its report; `resume` reattaches, or relaunches it from its session if it is gone. Nothing syncs files or branches between machines.
 
 ## Harness differences
 
@@ -106,7 +106,7 @@ Tool names in user profiles are passed to the child harness as written. Model an
 
 ## Settings
 
-`~/.pi/agent/herdr-subagents.json` then `.pi/herdr-subagents.json` (project wins), read by both parent harnesses:
+`~/.pi/agent/herdr-agents.json` then `.pi/herdr-agents.json` (project wins), read by both parent harnesses:
 
 ```json
 {
@@ -127,14 +127,14 @@ Tool names in user profiles are passed to the child harness as written. Model an
 - Pressing esc during a foreground spawn detaches it: the child keeps running as background.
 - `piArgs` / `claudeArgs`: extra CLI args for every child of that harness, for example `["--no-skills"]` or `["--allowedTools", "Bash(git *)"]`.
 
-Children carry `HERDR_SUBAGENT_PARENT`, `HERDR_SUBAGENT_DEPTH`, `HERDR_SUBAGENT_ID`, `HERDR_SUBAGENT_PROFILE` and `HERDR_SUBAGENT_HARNESS` in their environment.
+Children carry `HERDR_AGENTS_PARENT`, `HERDR_AGENTS_DEPTH`, `HERDR_AGENTS_ID`, `HERDR_AGENTS_PROFILE` and `HERDR_AGENTS_HARNESS` in their environment.
 
 ## Debug logging
 
-Logging is disabled by default and never writes to stdout or stderr. Set `HERDR_SUBAGENTS_LOG=1` to append logs to `~/.pi/agent/herdr-subagents-debug.log`, or set it to a file path:
+Logging is disabled by default and never writes to stdout or stderr. Set `HERDR_AGENTS_LOG=1` to append logs to `~/.pi/agent/herdr-agents-debug.log`, or set it to a file path:
 
 ```sh
-HERDR_SUBAGENTS_LOG=/tmp/herdr-subagents.log pi
+HERDR_AGENTS_LOG=/tmp/herdr-agents.log pi
 ```
 
 ## How a child asks the parent

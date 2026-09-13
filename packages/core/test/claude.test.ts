@@ -82,7 +82,7 @@ describe("claude child spawn", () => {
     expect(flag("--effort")).toBe("low");
     expect(flag("--permission-mode")).toBe("acceptEdits");
     expect(JSON.parse(flag("--mcp-config")).mcpServers.herdr.args[0]).toMatch(
-      /herdr-subagents-mcp\.ts$/,
+      /herdr-agents-mcp\.ts$/,
     );
     expect(args).not.toContain("--thinking");
     expect(args.some((a) => a.includes("\n"))).toBe(false);

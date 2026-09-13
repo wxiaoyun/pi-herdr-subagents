@@ -1,10 +1,10 @@
 {
-  "name": "@herdr-subagents/pi",
+  "name": "@herdr-agents/pi",
   "version": "0.2.0",
   "type": "module",
   "private": true,
   "description": "pi extension, the pi parent harness",
-  "dependencies": { "@herdr-subagents/core": "*" },
+  "dependencies": { "@herdr-agents/core": "*" },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"

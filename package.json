@@ -1,5 +1,5 @@
 {
-  "name": "pi-herdr-subagents",
+  "name": "herdr-agents",
   "version": "0.2.0",
   "type": "module",
   "private": true,
@@ -11,7 +11,7 @@
     "extensions": ["./packages/pi/src/index.ts"]
   },
   "bin": {
-    "herdr-subagents-mcp": "./packages/claude/bin/herdr-subagents-mcp.ts"
+    "herdr-agents-mcp": "./packages/claude/bin/herdr-agents-mcp.ts"
   },
   "scripts": {
     "test": "vitest run",

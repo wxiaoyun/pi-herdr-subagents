@@ -13,7 +13,7 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "./paths.ts";
 
-export const LOG_ENV = "HERDR_SUBAGENTS_LOG";
+export const LOG_ENV = "HERDR_AGENTS_LOG";
 
 export const log = (
   stage: string,
@@ -23,14 +23,14 @@ export const log = (
   if (!configuredPath) return;
   const path =
     configuredPath === "1"
-      ? join(getAgentDir(), "herdr-subagents-debug.log")
+      ? join(getAgentDir(), "herdr-agents-debug.log")
       : configuredPath;
   try {
     const kv = Object.entries(fields)
       .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
       .join(" ");
     mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `[herdr-subagents] stage=${stage} ${kv}\n`);
+    appendFileSync(path, `[herdr-agents] stage=${stage} ${kv}\n`);
   } catch {
     // Logging must never write to the TUI streams or break extension behavior.
   }
@@ -371,7 +371,7 @@ export function bind(machine?: Machine) {
         "report-agent",
         pane,
         "--source",
-        "herdr-subagents",
+        "herdr-agents",
         "--agent",
         "claude",
         "--state",

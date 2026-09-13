@@ -4,7 +4,7 @@
  * event bus.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createTools, log, type ParentHarness } from "@herdr-subagents/core";
+import { createTools, log, type ParentHarness } from "@herdr-agents/core";
 
 export default function (pi: ExtensionAPI) {
   if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) {

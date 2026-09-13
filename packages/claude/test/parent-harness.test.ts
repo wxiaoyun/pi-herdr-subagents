@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { type Herdr, HerdrError, type ToolSet } from "@herdr-subagents/core";
+import { type Herdr, HerdrError, type ToolSet } from "@herdr-agents/core";
 import { describe, expect, it } from "vitest";
 import { createClaudeParent } from "../src/parent-harness.ts";
 import { handler } from "../src/server.ts";
@@ -73,7 +73,7 @@ describe("mcp server", () => {
   });
 
   it("runs under plain node over stdio", async () => {
-    const bin = fileURLToPath(new URL("../bin/herdr-subagents-mcp.ts", import.meta.url));
+    const bin = fileURLToPath(new URL("../bin/herdr-agents-mcp.ts", import.meta.url));
     const p = spawn("node", [bin], { env: { ...process.env, HERDR_ENV: "1", HERDR_PANE_ID: "w0:p0" } });
     let out = "";
     p.stdout.on("data", (d) => { out += d; });

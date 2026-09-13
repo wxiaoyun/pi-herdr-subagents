@@ -82,11 +82,11 @@ export interface SpawnResult {
   text: string;
 }
 
-export const ENV_PARENT = "HERDR_SUBAGENT_PARENT";
-export const ENV_DEPTH = "HERDR_SUBAGENT_DEPTH";
-export const ENV_ID = "HERDR_SUBAGENT_ID";
-export const ENV_PROFILE = "HERDR_SUBAGENT_PROFILE";
-export const ENV_HARNESS = "HERDR_SUBAGENT_HARNESS";
+export const ENV_PARENT = "HERDR_AGENTS_PARENT";
+export const ENV_DEPTH = "HERDR_AGENTS_DEPTH";
+export const ENV_ID = "HERDR_AGENTS_ID";
+export const ENV_PROFILE = "HERDR_AGENTS_PROFILE";
+export const ENV_HARNESS = "HERDR_AGENTS_HARNESS";
 
 /** Workspace label for children of `label`. Idempotent. */
 export const CHILD_WS_SUFFIX = "-agents";
@@ -218,7 +218,7 @@ export class Manager {
     // prompts in a temp file (pi reads the path at startup) and clean up after
     // the child is interactive.
     // A Machine child reads a copy under /tmp over there.
-    const staged = mkdtempSync(join(tmpdir(), "pi-herdr-subagents-"));
+    const staged = mkdtempSync(join(tmpdir(), "herdr-agents-"));
     const stagedAs = child.machine ? `/tmp/${basename(staged)}` : staged;
     try {
       const args = childArgs(

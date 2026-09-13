@@ -41,7 +41,7 @@ const CLAUDE_EFFORT: Record<string, string> = { off: "low", minimal: "low" };
 const CLAUDE_NATIVE_AGENT_TOOLS = ["Agent", "SendMessage", "ListAgents"];
 
 export const MCP_SERVER_PATH = fileURLToPath(
-  new URL("../../claude/bin/herdr-subagents-mcp.ts", import.meta.url),
+  new URL("../../claude/bin/herdr-agents-mcp.ts", import.meta.url),
 );
 
 const mcpConfig = () =>

@@ -27,7 +27,7 @@ export const DEFAULTS: Settings = {
   claudeArgs: [],
 };
 
-const FILE = "herdr-subagents.json";
+const FILE = "herdr-agents.json";
 
 function readJson(path: string): Partial<Settings> {
   if (!existsSync(path)) return {};

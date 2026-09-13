@@ -3,7 +3,7 @@
  * Claude Code needs: initialize, tools/list, tools/call, ping.
  */
 import { createInterface } from "node:readline";
-import { createTools, log, type ToolSet } from "@herdr-subagents/core";
+import { createTools, log, type ToolSet } from "@herdr-agents/core";
 import { createClaudeParent } from "./parent-harness.ts";
 
 const PROTOCOL = "2025-06-18";
@@ -80,7 +80,7 @@ export function main(): void {
     // Still serve, but every tool errors: Claude shows a clear reason instead of a dead server.
     log("disabled", { reason: "not inside a herdr pane" });
     for (const t of tools.all) {
-      t.execute = async () => ({ text: "herdr-subagents: not running inside a herdr pane", isError: true });
+      t.execute = async () => ({ text: "herdr-agents: not running inside a herdr pane", isError: true });
     }
   }
   serve(tools);

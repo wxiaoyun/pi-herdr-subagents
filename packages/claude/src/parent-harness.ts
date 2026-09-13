@@ -3,7 +3,7 @@
  * typed into this session's own pane through herdr (they arrive as a user
  * message) and the blocked state is reported to herdr directly.
  */
-import { h as defaultHerdr, type Herdr, HerdrError, log, type ParentHarness } from "@herdr-subagents/core";
+import { h as defaultHerdr, type Herdr, HerdrError, log, type ParentHarness } from "@herdr-agents/core";
 
 export function createClaudeParent(pane: string, h: Herdr = defaultHerdr): ParentHarness {
   return {
